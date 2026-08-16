@@ -15,6 +15,7 @@ export const taskFrontmatterSchema = z.object({
   scheduled: dateString.default(null),
   tags: z.array(z.string()).default([]),
   links: z.array(z.string()).default([]),
+  dependencies: z.array(z.string()).default([]),
   created: z.string().default(() => new Date().toISOString()),
   completed: z.string().nullable().default(null),
 })

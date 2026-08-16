@@ -50,6 +50,8 @@ export interface Task {
   tags: string[]
   /** 关联的 wiki 页面（相对项目根） */
   links: string[]
+  /** 依赖的任务 id（被依赖方未完成 → 本任务视为被阻塞） */
+  dependencies: string[]
   created: string
   /** 完成时间 ISO */
   completed: string | null

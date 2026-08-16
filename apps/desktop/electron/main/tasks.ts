@@ -29,6 +29,7 @@ export function listTasks(projectsRoot: string): Task[] {
           scheduled: null,
           tags: [],
           links: [],
+          dependencies: [],
           created: new Date().toISOString(),
           completed: null,
           body: String(e),
@@ -64,6 +65,7 @@ export function writeTask(projectsRoot: string, task: Task): void {
     scheduled: task.scheduled,
     tags: task.tags,
     links: task.links,
+    dependencies: task.dependencies,
     created: task.created,
     completed: task.completed,
   }
@@ -91,6 +93,7 @@ export interface TaskInput {
   scheduled?: string | null
   tags?: string[]
   links?: string[]
+  dependencies?: string[]
   body?: string
 }
 
@@ -106,6 +109,7 @@ export function createTask(projectsRoot: string, input: TaskInput): Task {
     scheduled: input.scheduled ?? null,
     tags: input.tags ?? [],
     links: input.links ?? [],
+    dependencies: input.dependencies ?? [],
     created: now,
     completed: input.status === 'done' ? now : null,
     body: input.body ?? '',

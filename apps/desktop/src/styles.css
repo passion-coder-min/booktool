@@ -424,6 +424,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .badge.urgent { background: #d94a4a; }
 .badge.overdue { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 .badge.done { background: #2e9e5b; }
+.badge.todo { background: #8a94a3; }
+.badge.doing { background: #e08030; }
+.detail-title-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-bottom: 4px; }
 .quick-add { display: flex; gap: 6px; padding: 10px 14px 0; }
 
 .calendar { flex: 1; display: flex; flex-direction: column; padding: 12px 14px; min-height: 0; }
@@ -439,6 +442,7 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .cal-task { font-size: 11.5px; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 5px; padding: 3px 5px; cursor: grab; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .cal-task.done { text-decoration: line-through; color: var(--muted); border-left-color: var(--ok); }
 .cal-task.overdue { border-left-color: var(--danger); }
+.cal-task.blocked { border-left-color: #d94a4a; background: var(--danger-weak, #fdf0f0); }
 .unscheduled { width: 220px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 10px; overflow-y: auto; }
 .unscheduled.drag-over { background: var(--accent-weak); }
 

@@ -4,18 +4,21 @@ import { api } from '../api'
 import EmptyCard from '../components/EmptyCard'
 import CalendarView from './CalendarView'
 import { TaskEditModal } from './TaskManagePage'
+import TaskDetailModal from './TaskDetailModal'
 import type { Project } from '@booktool/shared'
 
 interface Props {
   workspace: WorkspaceInfo | null
 }
 
-/** 日历活动：跨项目任务日历（拖拽改期即时落盘；双击日期格新建该日任务） */
+/** 日历活动：跨项目任务日历（拖拽改期即时落盘；双击日期格新建；点击卡片查看详情/进度/依赖） */
 export default function CalendarActivity({ workspace }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projectFilter, setProjectFilter] = useState<string>('all')
   /** 双击日期格待新建的计划日（YYYY-MM-DD） */
   const [addingDate, setAddingDate] = useState<string | null>(null)
+  /** 点击任务卡片打开的详情任务 */
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
 
   const refresh = useCallback(() => void api.work.taskList().then(setTasks), [])
   useEffect(refresh, [refresh, workspace])
@@ -80,8 +83,29 @@ export default function CalendarActivity({ workspace }: Props) {
             {projectFilter === 'all' ? '全部项目' : projectMap.get(projectFilter)?.name}
           </span>
         </div>
-        <CalendarView project={virtualProject} tasks={filtered} onMutated={refresh} onAddTask={setAddingDate} />
+        <CalendarView
+          project={virtualProject}
+          tasks={filtered}
+          onMutated={refresh}
+          onAddTask={setAddingDate}
+          onTaskClick={setDetailTask}
+        />
       </section>
+
+      {detailTask && (
+        <TaskDetailModal
+          task={detailTask}
+          tasks={filtered}
+          projects={workspace.projects}
+          onClose={() => setDetailTask(null)}
+          onSaved={async () => {
+            // 刷新列表并把详情任务同步为最新数据（依赖增删/状态变更即时反映）
+            const list = await api.work.taskList()
+            setTasks(list)
+            setDetailTask((cur) => (cur ? (list.find((t) => t.id === cur.id) ?? null) : null))
+          }}
+        />
+      )}
 
       {addingDate && (
         <TaskEditModal

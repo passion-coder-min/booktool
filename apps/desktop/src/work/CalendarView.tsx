@@ -10,6 +10,8 @@ interface Props {
   onMutated: () => void
   /** 双击日期格 → 打开新建任务弹窗（参数为 YYYY-MM-DD 计划日） */
   onAddTask?: (date: string) => void
+  /** 点击已存在任务卡片 → 打开详情弹窗 */
+  onTaskClick?: (task: Task) => void
 }
 
 const DOW = ['一', '二', '三', '四', '五', '六', '日']
@@ -27,7 +29,7 @@ function mondayOf(d: Date): Date {
   return x
 }
 
-export default function CalendarView({ project, tasks, onMutated, onAddTask }: Props) {
+export default function CalendarView({ project, tasks, onMutated, onAddTask, onTaskClick }: Props) {
   const [mode, setMode] = useState<'week' | 'month'>('week')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -71,6 +73,16 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask }: P
   }, [tasks])
 
   const unscheduled = tasks.filter((t) => !t.scheduled)
+
+  // 被依赖阻塞的任务 id：存在依赖项未完成（或依赖缺失）即视为阻塞
+  const blockedIds = useMemo(() => {
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    const s = new Set<string>()
+    for (const t of tasks) {
+      if (t.dependencies.some((did) => { const d = byId.get(did); return !d || d.status !== 'done' })) s.add(t.id)
+    }
+    return s
+  }, [tasks])
 
   const shift = (dir: number) => {
     const d = new Date(anchor)
@@ -130,12 +142,14 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask }: P
                 date={fmt(d)}
                 tasks={byDate.get(fmt(d)) ?? []}
                 today={fmt(d) === today}
+                blockedIds={blockedIds}
                 onAddTask={onAddTask}
+                onTaskClick={onTaskClick}
               />
             ))}
           </div>
         </div>
-        <Unscheduled tasks={unscheduled} />
+        <Unscheduled tasks={unscheduled} blockedIds={blockedIds} onTaskClick={onTaskClick} />
       </DndContext>
     </div>
   )
@@ -145,12 +159,16 @@ function DayCell({
   date,
   tasks,
   today,
+  blockedIds,
   onAddTask,
+  onTaskClick,
 }: {
   date: string
   tasks: Task[]
   today: boolean
+  blockedIds: Set<string>
   onAddTask?: (date: string) => void
+  onTaskClick?: (task: Task) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${date}` })
   const isOtherMonth = tasks.length === 0 && false // 月视图淡显由 CSS :has 处理简化，跳过
@@ -164,13 +182,21 @@ function DayCell({
     >
       <div className="cal-date">{Number(date.slice(8))}</div>
       {tasks.map((t) => (
-        <DraggableCalTask key={t.id} task={t} />
+        <DraggableCalTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onClick={onTaskClick} />
       ))}
     </div>
   )
 }
 
-function DraggableCalTask({ task }: { task: Task }) {
+function DraggableCalTask({
+  task,
+  blocked,
+  onClick,
+}: {
+  task: Task
+  blocked: boolean
+  onClick?: (task: Task) => void
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id })
   const overdue =
     task.status !== 'done' && task.due !== null && task.due < todayStr()
@@ -179,16 +205,26 @@ function DraggableCalTask({ task }: { task: Task }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`cal-task${task.status === 'done' ? ' done' : ''}${overdue ? ' overdue' : ''}`}
-      title={`${task.title}${task.due ? `\n截止 ${task.due}` : ''}`}
+      className={`cal-task${task.status === 'done' ? ' done' : ''}${overdue ? ' overdue' : ''}${blocked ? ' blocked' : ''}`}
+      title={`${task.title}${task.due ? `\n截止 ${task.due}` : ''}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
       style={isDragging ? { opacity: 0.5 } : undefined}
+      onClick={() => onClick?.(task)}
     >
       {task.title}
+      {blocked && <span style={{ marginLeft: 4 }}>⛔</span>}
     </div>
   )
 }
 
-function Unscheduled({ tasks }: { tasks: Task[] }) {
+function Unscheduled({
+  tasks,
+  blockedIds,
+  onTaskClick,
+}: {
+  tasks: Task[]
+  blockedIds: Set<string>
+  onTaskClick?: (task: Task) => void
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: 'unscheduled' })
   return (
     <div className={`unscheduled${isOver ? ' drag-over' : ''}`} ref={setNodeRef}>
@@ -197,28 +233,38 @@ function Unscheduled({ tasks }: { tasks: Task[] }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {tasks.map((t) => (
-          <CompactTask key={t.id} task={t} />
+          <CompactTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onClick={onTaskClick} />
         ))}
       </div>
       <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-        拖动任务到日期格安排计划日；拖回此处取消安排。
+        拖动任务到日期格安排计划日；拖回此处取消安排。点击任务卡片查看详情。
       </p>
     </div>
   )
 }
 
-function CompactTask({ task }: { task: Task }) {
+function CompactTask({
+  task,
+  blocked,
+  onClick,
+}: {
+  task: Task
+  blocked: boolean
+  onClick?: (task: Task) => void
+}) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: task.id })
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className="cal-task"
+      className={`cal-task${task.status === 'done' ? ' done' : ''}${blocked ? ' blocked' : ''}`}
       style={{ whiteSpace: 'normal' }}
-      title={task.title}
+      title={`${task.title}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
+      onClick={() => onClick?.(task)}
     >
       {task.title}
+      {blocked && <span style={{ marginLeft: 4 }}>⛔</span>}
     </div>
   )
 }
