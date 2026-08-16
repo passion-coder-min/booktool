@@ -11,6 +11,7 @@ examples/*/output/
 *.pdf
 .tools/
 apps/desktop/release/
+packages/cli/dist/
 
 # 可重建静态资产（来源 npm，见 scripts/sync-assets.mjs）
 apps/desktop/src/public/vditor/

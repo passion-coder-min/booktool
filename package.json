@@ -6,9 +6,11 @@
   "scripts": {
     "postinstall": "node scripts/sync-assets.mjs",
     "dev": "pnpm --filter @booktool/desktop dev",
-    "build": "pnpm --filter @booktool/desktop build",
-    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/mdtypst/tsconfig.json && tsc --noEmit -p apps/desktop/tsconfig.json",
-    "test": "vitest run"
+    "build": "pnpm --filter @booktool/desktop build && pnpm --filter @booktool/cli build",
+    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/mdtypst/tsconfig.json && tsc --noEmit -p apps/desktop/tsconfig.json && tsc --noEmit -p packages/cli/tsconfig.json",
+    "test": "vitest run",
+    "booktool": "node packages/cli/dist/cli.js",
+    "build:cli": "pnpm --filter @booktool/cli build"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

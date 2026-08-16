@@ -130,6 +130,61 @@ importers:
         specifier: ^5.4.11
         version: 5.4.21(@types/node@22.20.1)
 
+  packages/cli:
+    dependencies:
+      '@booktool/mdtypst':
+        specifier: workspace:*
+        version: link:../mdtypst
+      '@booktool/shared':
+        specifier: workspace:*
+        version: link:../shared
+      highlight.js:
+        specifier: ^11.11.0
+        version: 11.12.0
+      katex:
+        specifier: ^0.16.11
+        version: 0.16.47
+      mermaid:
+        specifier: ^11.4.0
+        version: 11.16.1
+      rehype-highlight:
+        specifier: ^7.0.1
+        version: 7.0.2
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
+      rehype-stringify:
+        specifier: ^10.0.1
+        version: 10.0.1
+      remark-directive:
+        specifier: ^3.0.0
+        version: 3.0.1
+      remark-gfm:
+        specifier: ^4.0.0
+        version: 4.0.1
+      remark-math:
+        specifier: ^6.0.0
+        version: 6.0.0
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: ^11.1.1
+        version: 11.1.2
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      esbuild:
+        specifier: ^0.21.5
+        version: 0.21.5
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/mdtypst:
     dependencies:
       '@types/mdast':

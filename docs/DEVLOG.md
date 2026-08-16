@@ -216,6 +216,7 @@
 | HTML 标签 | br→换行、a→链接、HTML 表格(rowspan) 均渲染；174 条『不支持原生 HTML』警告清零 |
 | PDF 字体 | pdffonts 仅捆绑家族（无艺术字回退） |
 | 打包 | electron-builder Linux deb + AppImage 构建通过，应用可启动；图标/字体/Typst 引擎随包，离线自包含 |
+| CLI | 新增 @booktool/cli（mdbook 风格）：init / build / serve；真实书 73 页站点 + 热重载验证通过 |
 
 ## 已知问题与待办
 
