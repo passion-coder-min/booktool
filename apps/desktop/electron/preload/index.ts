@@ -63,6 +63,10 @@ const api = {
     ipcRenderer.on(IPC.compileDiagnostics, listener)
     return () => ipcRenderer.removeListener(IPC.compileDiagnostics, listener)
   },
+  config: {
+    get: () => ipcRenderer.invoke(IPC.configGet),
+    set: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC.configSet, patch),
+  },
   onMenuCmd: (cb: (cmd: string) => void) => {
     const listener = (_e: unknown, cmd: string) => cb(cmd)
     ipcRenderer.on('menu-cmd', listener)

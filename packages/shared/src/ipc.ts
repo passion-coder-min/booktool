@@ -38,6 +38,10 @@ export const IPC = {
   imageImport: 'image:import',
   imagePaste: 'image:paste',
 
+  // 应用配置（设置页：如 Typst 镜像）
+  configGet: 'config:get',
+  configSet: 'config:set',
+
   // 工作模式
   projectCreate: 'project:create',
   projectRename: 'project:rename',

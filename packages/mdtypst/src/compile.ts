@@ -276,8 +276,9 @@ export class Compiler {
     const rows: AnyNode[] = node.children
     const [head, ...body] = rows
     const headerCells: string[] = head.children.map((cell: AnyNode) => `  ${this.cell(cell)}`)
-    // auto 列宽按内容自适应（columns: N 会强制均分）
-    const colSpec = Array.from({ length: cols }, () => 'auto').join(', ')
+    // 前几列 auto 按内容自适应，末列 1fr 吸收剩余宽度并强制换行，
+    // 避免长文本/长 ASCII 串把表格撑出页面
+    const colSpec = cols <= 1 ? '1fr' : [...Array.from({ length: cols - 1 }, () => 'auto'), '1fr'].join(', ')
     const out = [
       '#table(',
       `  columns: (${colSpec}),`,

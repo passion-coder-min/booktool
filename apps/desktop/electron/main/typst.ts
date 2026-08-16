@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, createWriteStream, unlinkSync, chmodSync } from 
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
+import { typstMirrorBases } from './config'
 
 export const TYPST_VERSION = '0.15.1'
 /** 可用 Typst 的最低版本（完整版本号，如 0.13.0 → 1300） */
@@ -138,19 +139,14 @@ function releaseAsset(): ReleaseAsset {
 }
 
 /**
- * 下载源列表：GitHub 直连 + 国内镜像（USTC 等）。
- * LatestRelease 目录与版本目录内容一致，避免依赖带日期的目录名。
+ * 下载源列表：官方 GitHub 始终优先，随后是配置/环境变量指定的第三方镜像
+ * （配置见「设置 → 编译器 → Typst 镜像」，缺省 USTC）。LatestRelease 目录与版本目录内容一致。
  */
 function downloadUrls(asset: ReleaseAsset): string[] {
   const urls = [
     `https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/${asset.file}`,
   ]
-  const mirrors = (process.env.BOOKTOOL_TYPST_MIRRORS ??
-    'https://mirrors.ustc.edu.cn/github-release/typst/typst/LatestRelease')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  for (const m of mirrors) urls.push(`${m}/${asset.file}`)
+  for (const base of typstMirrorBases()) urls.push(`${base.replace(/\/+$/, '')}/${asset.file}`)
   return urls
 }
 

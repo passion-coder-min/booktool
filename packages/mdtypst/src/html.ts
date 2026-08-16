@@ -139,9 +139,11 @@ export function htmlTableToTypst(html: string): string[] {
   })
   if (colCount === 0) return []
 
+  // 前几列 auto，末列 1fr 吸收剩余宽度并换行，避免长文本撑出页面
+  const colSpec = colCount <= 1 ? '1fr' : [...Array.from({ length: colCount - 1 }, () => 'auto'), '1fr'].join(', ')
   const out = [
     '#table(',
-    `  columns: (${Array.from({ length: colCount }, () => 'auto').join(', ')}),`,
+    `  columns: (${colSpec}),`,
     `  align: (${Array.from({ length: colCount }, () => 'auto').join(', ')}),`,
   ]
   // 头部行（连续以 <th> 开头的行）

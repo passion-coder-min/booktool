@@ -10,6 +10,7 @@ import {
 } from './books'
 import { compileBook, pdfPathOf, compileSingleFile } from './compiler'
 import { listTasks, createTask, updateTask, deleteTask, type TaskInput } from './tasks'
+import { readConfig, writeConfig } from './config'
 
 export function registerIpc() {
   const send = (channel: string, payload: unknown) => {
@@ -330,6 +331,10 @@ export function registerIpc() {
     deleteTask(join(root, 'projects'), project, id)
     return true
   })
+
+  // 应用配置（设置页）：读取/写入 userData/config.json
+  ipcMain.handle(IPC.configGet, () => readConfig())
+  ipcMain.handle(IPC.configSet, (_e, patch: Parameters<typeof writeConfig>[0]) => writeConfig(patch))
 }
 
 /** 首次启动创建示例工作区（书籍 + 项目 + 跨周任务样例） */

@@ -151,7 +151,7 @@ describe('mdast→Typst 列表与引用', () => {
 describe('mdast→Typst 表格与容器', () => {
   it('GFM 表格含对齐', () => {
     const out = t('| 左 | 中 | 右 |\n|---|:-:|--:|\n| a | b | c |')
-    expect(out).toContain('columns: (auto, auto, auto),')
+    expect(out).toContain('columns: (auto, auto, 1fr),')
     expect(out).toContain('align: (auto, center, right),')
     expect(out).toContain('table.header(')
     expect(out).toContain('[左],')

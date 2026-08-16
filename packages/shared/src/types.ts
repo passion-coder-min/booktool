@@ -66,6 +66,12 @@ export interface ProjectMeta {
   description: string
 }
 
+/** 应用级配置（持久化 userData/config.json，渲染层可读写；如 Typst 下载镜像） */
+export interface AppConfig {
+  /** Typst 下载第三方镜像根 URL 列表（官方 GitHub 始终优先）；空则用默认 USTC */
+  typstMirrors?: string[]
+}
+
 export interface Project extends ProjectMeta {
   dir: string
   wikiFiles: string[]

@@ -70,5 +70,9 @@ export interface Api {
   }
   onCompileStatus: (cb: (payload: unknown) => void) => () => void
   onMenuCmd: (cb: (cmd: string) => void) => () => void
+  config: {
+    get: () => Promise<import('@booktool/shared').AppConfig>
+    set: (patch: Partial<import('@booktool/shared').AppConfig>) => Promise<import('@booktool/shared').AppConfig>
+  }
   fileUrl: (absPath: string) => string
 }

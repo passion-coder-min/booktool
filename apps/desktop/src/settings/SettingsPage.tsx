@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { WorkspaceInfo } from '@booktool/shared'
 import { api } from '../api'
 import { useTheme } from '../theme'
@@ -9,6 +10,22 @@ interface Props {
 
 export default function SettingsPage({ workspace, onChanged }: Props) {
   const { theme, toggle } = useTheme()
+  const [mirrorsText, setMirrorsText] = useState('')
+  const [savedTip, setSavedTip] = useState(false)
+
+  useEffect(() => {
+    void api.config.get().then((cfg) => setMirrorsText((cfg.typstMirrors ?? []).join('\n')))
+  }, [])
+
+  const saveMirrors = async () => {
+    const list = mirrorsText
+      .split(/\n|,/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    await api.config.set({ typstMirrors: list })
+    setSavedTip(true)
+    setTimeout(() => setSavedTip(false), 2500)
+  }
 
   return (
     <div className="content-area">
@@ -49,9 +66,29 @@ export default function SettingsPage({ workspace, onChanged }: Props) {
         <div className="row">
           <span>Typst</span>
           <span className="desc">
-            系统未安装时自动下载 v0.15.1；国内可用环境变量 <code>BOOKTOOL_TYPST_MIRRORS</code> 指定镜像（默认已含
-            USTC）
+            未内置/系统未安装时自动下载 v0.15.1；官方 GitHub 优先，第三方镜像按下列顺序尝试。
+            已内置随包引擎，离线可直接编译；「帮助 → 更新 Typst 引擎」走同一套镜像更新。
           </span>
+        </div>
+        <div className="row" style={{ alignItems: 'flex-start' }}>
+          <span>Typst 镜像</span>
+          <div style={{ flex: 1 }}>
+            <textarea
+              value={mirrorsText}
+              onChange={(e) => setMirrorsText(e.target.value)}
+              rows={3}
+              placeholder={'每行一个镜像根 URL（官方 GitHub 始终优先）\nhttps://mirrors.ustc.edu.cn/github-release/typst/typst/LatestRelease'}
+              style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
+            />
+            <div style={{ marginTop: 6 }}>
+              <button className="small" onClick={() => void saveMirrors()}>
+                保存镜像
+              </button>
+              {savedTip && (
+                <span style={{ marginLeft: 8, color: 'var(--ok)', fontSize: 12.5 }}>✓ 已保存</span>
+              )}
+            </div>
+          </div>
         </div>
         <div className="row">
           <span>Mermaid</span>
