@@ -182,10 +182,58 @@ describe('转义与降级', () => {
     expect(t('特殊字符 #1: $ 与 *星号*')).toBe('特殊字符 \\#1: \\$ 与 #emph[星号]')
   })
 
-  it('HTML 产生 warning 并跳过', () => {
+  it('HTML 标签剥掉并保留文本内容', () => {
     const out = compileMarkdown('<div>hi</div>')
-    expect(out.typst.trim()).toBe('')
-    expect(out.warnings.some((w) => w.message.includes('HTML'))).toBe(true)
+    expect(out.typst.trim()).toBe('hi')
+    expect(out.warnings.some((w) => w.message.includes('HTML'))).toBe(false)
+  })
+
+  it('<br> 转为换行', () => {
+    expect(t('第一行<br/>第二行')).toBe('第一行#linebreak()第二行')
+    expect(t('第一行<br>第二行')).toBe('第一行#linebreak()第二行')
+  })
+
+  it('HTML <a> 链接（http/https 可点击，相对 href 渲染文本）', () => {
+    expect(t('<a href="https://typst.app">官网</a>')).toBe('#link("https://typst.app")[官网]')
+    expect(t('<a href="/ref/x">内部</a>')).toBe('内部')
+  })
+
+  it('HTML <code> 行内代码；嵌套 <a> 时保留链接', () => {
+    expect(t('<code>onCreate()</code>')).toBe('#raw("onCreate()", block: false)')
+    expect(t('<code><a href="https://d.android.com">onFinishInflate()</a></code>')).toBe(
+      '#link("https://d.android.com")[onFinishInflate()]',
+    )
+  })
+
+  it('HTML <b>/<i> 强调', () => {
+    expect(t('<b>加粗</b>和<i>斜体</i>')).toBe('#strong[加粗]和#emph[斜体]')
+  })
+
+  it('整段 HTML 表格（含 rowspan）转为 Typst 表格', () => {
+    const html = [
+      '<table>',
+      '  <thead><tr><th>类</th><th>方法</th></tr></thead>',
+      '  <tbody>',
+      '    <tr><td rowspan="2">创建</td><td>构造</td></tr>',
+      '    <tr><td><a href="https://d.android.com/ref">onCreate()</a></td></tr>',
+      '  </tbody>',
+      '</table>',
+    ].join('\n')
+    const out = t(html)
+    expect(out).toContain('#table(')
+    expect(out).toContain('table.header(')
+    // #table 内是代码模式，table.cell 调用不带 #
+    expect(out).toContain('table.cell(rowspan: 2, [创建])')
+    expect(out).toContain('#link("https://d.android.com/ref")[onCreate()]')
+    // rowspan 使第二行第 1 列被占用：不出现独立的 [创建] 普通单元格
+    expect(out).not.toContain('\n  [创建],')
+  })
+
+  it('HTML 实体解码（remark 已解码 markdown 文本中的实体；HTML 属性路径解码）', () => {
+    // markdown 文本：remark 把 &amp; 解码为 &，转义输出 \&（渲染仍为 &）
+    expect(t('a &amp; b')).toBe('a \\& b')
+    // HTML 内链接属性：href 中的实体在 html.ts 中解码
+    expect(t('<a href="https://x.com?a=1&amp;b=2">x</a>')).toBe('#link("https://x.com?a=1&b=2")[x]')
   })
 
   it('行号映射覆盖顶层块', () => {

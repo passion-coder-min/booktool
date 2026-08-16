@@ -3,6 +3,7 @@ import { escapeTypstText, typstString } from './escape'
 import { slugifyHeading, uniqueSlug } from './slug'
 import { latexToTypst } from './math'
 import { parseMarkdown } from './parse'
+import { htmlFragmentToTypst, htmlTableToTypst, parseHtmlTag, wrapHtmlContent } from './html'
 
 export interface CompileOptions {
   /** md 中图片相对路径 → Typst 可见路径（编译管线注入） */
@@ -176,9 +177,18 @@ export class Compiler {
         return this.tableLines(node)
       case 'image':
         return this.figureLines(node)
-      case 'html':
-        this.warn('不支持原生 HTML，已忽略', node)
-        return []
+      case 'html': {
+        const v = node.value ?? ''
+        const trimmed = v.trim()
+        if (!trimmed) return []
+        // 网络抓取书常用整段 HTML 表格：解析为 Typst 表格（支持 rowspan）
+        if (/^<table\b/i.test(trimmed)) {
+          const lines = htmlTableToTypst(v)
+          if (lines.length) return lines
+        }
+        const frag = htmlFragmentToTypst(v)
+        return frag ? [frag] : []
+      }
       case 'yaml':
       case 'definition':
       case 'footnoteDefinition':
@@ -292,20 +302,51 @@ export class Compiler {
   // ---------------- 内联（content 模式） ----------------
 
   private content(nodes: AnyNode[]): string {
-    let out = ''
-    let prevExpr = false
-    for (const node of nodes) {
-      const piece = this.inline(node)
-      // 表达式（#strong[…] 等）后紧跟以 ( 或 { 开头的文本会被 Typst 解析为
-      // 调用参数（如 **协程**(说明) -> #strong[协程](说明) 报错），转义首字符
-      if (prevExpr && node.type === 'text' && /^[({]/.test(piece)) {
-        out += '\\' + piece
-      } else {
-        out += piece
-      }
-      prevExpr = piece.startsWith('#')
+    interface Ctx {
+      parts: string[]
+      prevExpr: boolean
+      hasMarkup: boolean
     }
-    return out
+    const root: Ctx = { parts: [], prevExpr: false, hasMarkup: false }
+    const stack: ({ ctx: Ctx; name: string; href: string })[] = []
+    const append = (ctx: Ctx, piece: string, isText: boolean) => {
+      if (piece === '') return
+      if (isText && ctx.prevExpr && /^[({]/.test(piece)) {
+        // 表达式（#strong[…] 等）后紧跟 ( 或 { 会被解析为调用参数，转义首字符
+        ctx.parts.push('\\' + piece)
+      } else {
+        ctx.parts.push(piece)
+      }
+      ctx.prevExpr = piece.startsWith('#')
+      if (!isText) ctx.hasMarkup = true
+    }
+    const cur = () => (stack.length ? stack[stack.length - 1].ctx : root)
+    for (const node of nodes) {
+      const tag = node.type === 'html' ? parseHtmlTag(node.value ?? '') : null
+      if (tag) {
+        if (tag.void) {
+          append(cur(), tag.name === 'br' ? '#linebreak()' : '', false)
+          continue
+        }
+        if (!tag.isClose) {
+          // 开标签：内容压栈，待匹配闭标签后封装
+          stack.push({ ctx: { parts: [], prevExpr: false, hasMarkup: false }, name: tag.name, href: tag.href })
+          continue
+        }
+        // 闭标签：弹栈并封装
+        const frame = stack.pop()
+        if (frame && frame.name === tag.name) {
+          const inner = frame.ctx.parts.join('')
+          append(cur(), wrapHtmlContent(frame.name, frame.href, inner, frame.ctx.hasMarkup), false)
+        }
+        continue
+      }
+      append(cur(), this.inline(node), node.type === 'text')
+    }
+    // 未闭合标签：缓冲内容直接保留
+    let extra = ''
+    for (const frame of stack) extra += frame.ctx.parts.join('')
+    return root.parts.join('') + extra
   }
 
   private inline(node: AnyNode): string {
@@ -358,8 +399,7 @@ export class Compiler {
         return `#footnote[${body}]`
       }
       case 'html':
-        this.warn('不支持原生 HTML，已忽略', node)
-        return ''
+        return htmlFragmentToTypst(node.value ?? '')
       case 'textDirective':
         return this.content(node.children ?? [])
       case 'leafDirective':
