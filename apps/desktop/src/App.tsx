@@ -122,7 +122,9 @@ function AppInner() {
           bookCommands?.createNew()
           break
         case 'open-dir':
-          bookCommands?.openDirectory()
+          // 书籍工作区/单文件：打开当前书籍或文件所在目录；其余视图打开工作区根目录
+          if (bookCommands?.openDirectory) bookCommands.openDirectory()
+          else if (workspace?.root) void api.book.openDir(workspace.root)
           break
         case 'toggle-editor-mode':
           bookCommands?.toggleEditorMode()
@@ -145,7 +147,7 @@ function AppInner() {
       }
     })
     return off
-  }, [editor, bookCommands, toggleTheme])
+  }, [editor, bookCommands, toggleTheme, workspace])
 
   return (
     <div className="app">
