@@ -1,0 +1,10 @@
+{
+  "theme": "neutral",
+  "fontFamily": "Noto Sans SC",
+  "securityLevel": "strict",
+  "htmlLabels": false,
+  "flowchart": { "htmlLabels": false },
+  "class": { "htmlLabels": false },
+  "sequence": { "useMaxWidth": true },
+  "gantt": { "useMaxWidth": true }
+}
