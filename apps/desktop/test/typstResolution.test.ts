@@ -8,7 +8,7 @@ vi.mock('electron', () => ({
     getAppPath: () => join(__dirname, '..'),
   },
 }))
-describe('typst 解析（内置优先）'', () => {
+describe('typst 解析（内置优先）', () => {
   it('无 userData 二进制时优先使用随包捆绑版本', async () => {
     const { ensureTypst, typstBundledPath } = await import('../electron/main/typst')
     const bundled = typstBundledPath()
