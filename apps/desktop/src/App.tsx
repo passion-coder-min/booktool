@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WorkspaceInfo } from '@booktool/shared'
 import { api } from './api'
 import { ThemeProvider, useTheme } from './theme'
@@ -38,6 +38,32 @@ function AppInner() {
 
   const refresh = useCallback(() => void api.workspace.get().then(setWorkspace), [])
   useEffect(refresh, [refresh])
+
+  // 「打开目录」：从任意活动打开外部书籍目录并加载内容。BookMode 可能未挂载，
+  // 通过 ref + pending 兜底——挂载后（onRegisterBookOpen）会消费 pending。
+  const NOOP_OPEN_BOOK = () => {}
+  const bookOpenRef = useRef<(dir: string, name: string) => void>(NOOP_OPEN_BOOK)
+  const pendingBookOpen = useRef<{ dir: string; name: string } | null>(null)
+  const registerBookOpen = useCallback((fn: (dir: string, name: string) => void) => {
+    bookOpenRef.current = fn
+    if (pendingBookOpen.current) {
+      const p = pendingBookOpen.current
+      pendingBookOpen.current = null
+      fn(p.dir, p.name)
+    }
+  }, [])
+
+  const openBookDirectory = useCallback(async () => {
+    const prev = new Set((workspace?.externalBooks ?? []).map((b) => b.dir))
+    const ws = await api.book.openDirectory()
+    if (!ws) return
+    refresh()
+    const added = ws.externalBooks.find((b) => !prev.has(b.dir))
+    if (!added) return
+    setActivity('book')
+    if (bookOpenRef.current !== NOOP_OPEN_BOOK) bookOpenRef.current(added.dir, added.name)
+    else pendingBookOpen.current = { dir: added.dir, name: added.name }
+  }, [workspace, refresh])
 
   const empty = workspace !== null && workspace.books.length === 0 && workspace.projects.length === 0
 
@@ -122,9 +148,8 @@ function AppInner() {
           bookCommands?.createNew()
           break
         case 'open-dir':
-          // 书籍工作区/单文件：打开当前书籍或文件所在目录；其余视图打开工作区根目录
-          if (bookCommands?.openDirectory) bookCommands.openDirectory()
-          else if (workspace?.root) void api.book.openDir(workspace.root)
+          // 打开外部书籍目录并加载其内容（而非打开系统文件管理器）
+          void openBookDirectory()
           break
         case 'toggle-editor-mode':
           bookCommands?.toggleEditorMode()
@@ -147,7 +172,7 @@ function AppInner() {
       }
     })
     return off
-  }, [editor, bookCommands, toggleTheme, workspace])
+  }, [editor, bookCommands, toggleTheme, workspace, openBookDirectory, registerBookOpen])
 
   return (
     <div className="app">
@@ -162,7 +187,12 @@ function AppInner() {
           </div>
         )}
         {activity === 'book' && (
-          <BookMode workspace={workspace} onChanged={refresh} onRegisterCommands={setBookCommands} />
+          <BookMode
+            workspace={workspace}
+            onChanged={refresh}
+            onRegisterCommands={setBookCommands}
+            onRegisterBookOpen={registerBookOpen}
+          />
         )}
         {activity === 'work' && <WorkActivity workspace={workspace} onChanged={refresh} />}
         {activity === 'calendar' && <CalendarActivity workspace={workspace} />}

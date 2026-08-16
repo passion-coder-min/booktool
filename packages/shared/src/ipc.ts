@@ -25,8 +25,6 @@ export const IPC = {
   bookCompile: 'book:compile',
   bookReadAsset: 'book:read-asset',
   bookOpenPdf: 'book:open-pdf',
-  /** 在系统文件管理器中打开目录（当前书籍 / 单个文件所在目录） */
-  bookOpenFolder: 'book:open-folder',
   bookSearch: 'book:search',
   /** 打开外部目录（mdBook 兼容书籍）并注册 */
   bookOpenDirectory: 'book:open-directory',

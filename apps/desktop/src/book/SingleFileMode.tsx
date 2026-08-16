@@ -158,7 +158,6 @@ export default function SingleFileMode({ file, onClose, onRegisterCommands }: Pr
       openDiagnostics: () => setDiagOpen((v) => !v),
       openPdf: openSystem,
       previewPdf: openPdfInApp,
-      openDirectory: () => void api.book.openDir(dirname(file.absPath)),
       get statusBarInfo() {
         const diags = report?.diagnostics ?? []
         return {

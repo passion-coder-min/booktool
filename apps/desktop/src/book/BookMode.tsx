@@ -33,8 +33,6 @@ export interface BookCommands {
   openPdf(): void
   /** 编译完成后在应用内预览 PDF */
   previewPdf(): void
-  /** 在系统文件管理器中打开目录（书籍根 / 单文件所在目录） */
-  openDirectory(): void
   statusBarInfo?: {
     compiling: boolean
     durationMs?: number
@@ -54,9 +52,11 @@ interface Props {
   workspace: WorkspaceInfo | null
   onChanged: () => void
   onRegisterCommands: (c: BookCommands | null) => void
+  /** 供 App「打开目录」在书籍加载后跳入工作区（BookMode 可能晚于请求挂载） */
+  onRegisterBookOpen?: (fn: (dir: string, name: string) => void) => void
 }
 
-export default function BookMode({ workspace, onChanged, onRegisterCommands }: Props) {
+export default function BookMode({ workspace, onChanged, onRegisterCommands, onRegisterBookOpen }: Props) {
   // 三级导航：书籍管理页 ↔ 书籍工作区 ↔ 单个文件编辑（URL hash 可指定初始进入，用于自动化目检：
   // #book-workspace 打开第一本书、#single-file:<绝对路径> 打开单个文件）
   const [view, setView] = useState<'manage' | 'workspace' | 'single'>(() => {
@@ -128,6 +128,12 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
     setPdfPath(null)
     setView('workspace')
   }, [])
+
+  // 向 App 暴露 openBook（供「打开目录」跨活动加载书籍；含挂载前 pending 兜底）
+  useEffect(() => {
+    onRegisterBookOpen?.(openBook)
+    return () => onRegisterBookOpen?.(() => {})
+  }, [onRegisterBookOpen, openBook])
 
   // hash 指定 book-workspace 时自动打开第一本书与第一章（自动化目检用）
   useEffect(() => {
@@ -409,9 +415,6 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
         if (pdfPath) void api.book.openPdf(bookDir!, pdfPath)
       },
       previewPdf: openPdfInApp,
-      openDirectory: () => {
-        if (bookDir) void api.book.openDir(bookDir)
-      },
       get statusBarInfo() {
         const diags = report?.diagnostics ?? []
         return {
