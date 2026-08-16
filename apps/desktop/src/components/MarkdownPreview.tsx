@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
@@ -10,51 +10,45 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeStringify from 'rehype-stringify'
 import mermaid from 'mermaid'
 import { api } from '../api'
+import remarkCallout, { calloutTitle } from './remarkCallout'
+import rehypeImages from './rehypeImages'
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/github.css'
 
-let processor: any = null
-
-function getProcessor() {
-  if (!processor) {
-    processor = unified()
-      .use(remarkParse)
-      .use(remarkGfm)
-      .use(remarkMath)
-      .use(remarkDirective)
-      .use(remarkRehype, {
-        // 指令容器 -> div.admonition（与 PDF 管线同源）
-        handlers: {
-          containerDirective(state: any, node: any) {
-            return {
-              type: 'element',
-              tagName: 'div',
-              properties: {
-                className: ['admonition', `admonition-${node.name}`],
+function buildProcessor(baseDir: string) {
+  return unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkMath)
+    .use(remarkDirective)
+    .use(remarkCallout)
+    .use(remarkRehype, {
+      // 指令容器 / GitHub callout -> div.admonition（与 PDF 管线同源）
+      handlers: {
+        containerDirective(state: any, node: any) {
+          return {
+            type: 'element',
+            tagName: 'div',
+            properties: {
+              className: ['admonition', `admonition-${node.name}`],
+            },
+            children: [
+              {
+                type: 'element',
+                tagName: 'div',
+                properties: { className: ['admonition-title'] },
+                children: [{ type: 'text', value: node.attributes?.title || calloutTitle(node.name) }],
               },
-              children: [
-                {
-                  type: 'element',
-                  tagName: 'div',
-                  properties: { className: ['admonition-title'] },
-                  children: [{ type: 'text', value: node.attributes?.title || defaultTitle(node.name) }],
-                },
-                ...state.all(node),
-              ],
-            }
-          },
-        } as never,
-      })
-      .use(rehypeKatex)
-      .use(rehypeHighlight)
-      .use(rehypeStringify)
-  }
-  return processor
-}
-
-function defaultTitle(name: string): string {
-  const map: Record<string, string> = { note: '备注', tip: '提示', warning: '注意', danger: '警告' }
-  return map[name] ?? name
+              ...state.all(node),
+            ],
+          }
+        },
+      } as never,
+    })
+    .use(rehypeImages, { baseDir, toUrl: (abs: string) => api.fileUrl(abs) } as never)
+    .use(rehypeKatex)
+    .use(rehypeHighlight)
+    .use(rehypeStringify)
 }
 
 let mermaidSeq = 0
@@ -93,31 +87,26 @@ interface Props {
 
 export default function MarkdownPreview({ markdown, baseDir }: Props) {
   const ref = useRef<HTMLDivElement>(null)
-  const [renderTick, setRenderTick] = useState(0)
 
+  const processor = useMemo(() => buildProcessor(baseDir), [baseDir])
   const html = useMemo(() => {
     try {
-      return String(getProcessor().processSync(markdown))
+      return String(processor.processSync(markdown))
     } catch (err) {
       return `<p style="color:#d94a4a">预览渲染失败：${String(err)}</p>`
     }
-  }, [markdown])
+  }, [markdown, processor])
 
+  // 图片路径已在管线内改写（rehypeImages）；此处仅处理 mermaid 块渲染，
+  // 它直接替换 DOM 元素，无需 key 翻转强制重挂载
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    // 图片相对路径 -> booktool-file 协议
-    for (const img of el.querySelectorAll('img')) {
-      const src = img.getAttribute('src') ?? ''
-      if (/^(https?:|data:|booktool-file:)/.test(src)) continue
-      const abs = baseDir ? `${baseDir.replace(/\/+$/, '')}/${src.replace(/^\.?\//, '')}` : src
-      img.src = api.fileUrl(abs)
-    }
-    void renderMermaidBlocks(el).then(() => setRenderTick((t) => t + 1))
-  }, [html, baseDir])
+    void renderMermaidBlocks(el)
+  }, [html])
 
   return (
-    <div ref={ref} className="preview markdown-body" key={renderTick % 2}>
+    <div ref={ref} className="preview markdown-body">
       <div dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   )

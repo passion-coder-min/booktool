@@ -6,9 +6,10 @@ describe('formatCommands 纯函数', () => {
     expect(tableTemplate(3, 2)).toBe(['| 列1 | 列2 |', '| --- | --- |', ' 1 | 2 ', ' 2 | 4 '].join('\n'))
   })
 
-  it('admonitionTemplate 含/不含标题属性', () => {
-    expect(admonitionTemplate('warning')).toBe(':::warning\n内容\n:::')
-    expect(admonitionTemplate('tip', '快速开始')).toBe(':::tip{title="快速开始"}\n内容\n:::')
+  it('admonitionTemplate 用 GitHub callout 语法（Vditor/预览/PDF 三端同源）', () => {
+    expect(admonitionTemplate('warning')).toBe('> [!WARNING]\n> 内容')
+    expect(admonitionTemplate('note', '快速开始')).toBe('> [!NOTE] 快速开始\n> 内容')
+    expect(admonitionTemplate('danger')).toBe('> [!CAUTION]\n> 内容')
   })
 
   it('nextFootnoteId 递增不冲突', () => {

@@ -44,9 +44,17 @@ export function tableTemplate(rows: number, cols: number): string {
   return [`| ${header} |`, `| ${sep} |`, body].filter(Boolean).join('\n')
 }
 
+/** 应用内提示类型 → GitHub callout 标签（Vditor IR 原生渲染） */
+const KIND_TO_CALLOUT: Record<string, string> = {
+  note: 'NOTE',
+  tip: 'TIP',
+  warning: 'WARNING',
+  danger: 'CAUTION',
+}
+
 export function admonitionTemplate(kind: string, title?: string): string {
-  const head = title ? `:::${kind}{title="${title}"}` : `:::${kind}`
-  return `${head}\n内容\n:::`
+  const tag = KIND_TO_CALLOUT[kind] ?? kind.toUpperCase()
+  return `> [!${tag}]${title ? ' ' + title : ''}\n> 内容`
 }
 
 export function nextFootnoteId(doc: string): number {

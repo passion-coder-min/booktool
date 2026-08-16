@@ -2,12 +2,15 @@ import type { Nodes, Root } from 'mdast'
 import { escapeTypstText, typstString } from './escape'
 import { slugifyHeading, uniqueSlug } from './slug'
 import { latexToTypst } from './math'
+import { parseMarkdown } from './parse'
 
 export interface CompileOptions {
   /** md 中图片相对路径 → Typst 可见路径（编译管线注入） */
   resolveImage?: (url: string) => string
   /** 输出头部附加行（如 `#import "../template.typ": *`），计入行号映射 */
   preamble?: string
+  /** 全局标题 label 集合（整本书合并编译时跨章节锚点解析；缺省仅本 md 内） */
+  knownLabels?: Set<string>
 }
 
 export interface CompileWarning {
@@ -37,10 +40,12 @@ const LANG_ALIAS: Record<string, string> = {
 type AnyNode = Nodes & { [k: string]: any }
 
 export class Compiler {
-  private opts: Required<CompileOptions>
+  private opts: Required<Omit<CompileOptions, 'knownLabels'>> & { knownLabels?: Set<string> }
   private warnings: CompileWarning[] = []
   private mappings: LineMapping[] = []
   private slugSeen = new Map<string, number>()
+  private labelSeen = new Map<string, number>()
+  private labels = new Set<string>()
   private definitions = new Map<string, { url: string; title: string | null }>()
   private footnotes = new Map<string, AnyNode>()
   private depth = 0
@@ -50,6 +55,7 @@ export class Compiler {
     this.opts = {
       resolveImage: opts.resolveImage ?? ((u: string) => u),
       preamble: opts.preamble ?? '',
+      knownLabels: opts.knownLabels,
     }
   }
 
@@ -66,12 +72,16 @@ export class Compiler {
     }
   }
 
-  /** 收集链接定义与脚注定义 */
+  /** 收集链接定义、脚注定义与标题 label（锚点解析用） */
   private prepass(node: AnyNode) {
     if (node.type === 'definition') {
       this.definitions.set(node.identifier, { url: node.url, title: node.title ?? null })
     } else if (node.type === 'footnoteDefinition') {
       this.footnotes.set(node.identifier, node)
+    } else if (node.type === 'heading') {
+      // 独立 seen（不污染正式输出的 slugSeen）；按文档序遍历，
+      // 与 serialize 阶段的唯一后缀分配结果一致
+      this.labels.add(uniqueSlug(slugifyHeading(plainText(node)), this.labelSeen))
     }
     for (const child of node.children ?? []) this.prepass(child)
   }
@@ -132,8 +142,34 @@ export class Compiler {
       case 'math': {
         return this.displayMath(node)
       }
-      case 'blockquote':
+      case 'blockquote': {
+        // GitHub callout：> [!TYPE] 或 > [!TYPE] 标题 → admonition（与 ::: 容器等价）
+        const kids = node.children as any[]
+        const first = kids[0] as any
+        if (first && first.type === 'paragraph' && first.children?.[0]?.type === 'text') {
+          const t0 = String(first.children[0].value)
+          // 标题须与 [!TYPE] 同处一行（仅空格/制表符分隔），换行则视为正文开始
+          const m = t0.match(/^\[\s*!([A-Za-z]+)\s*\](?:[ \t]+([^\n]*))?/)
+          if (m) {
+            const kind = m[1].toLowerCase()
+            const title = (m[2] ?? '').trim()
+            const rest = t0.replace(/^\[\s*![A-Za-z]+\s*\](?:[ \t]+[^\n]*)?/, '')
+            const bodyChildren: any[] = []
+            const restText = rest.replace(/^\s+/, '')
+            if (restText) {
+              bodyChildren.push({ ...first, children: [{ ...first.children[0], value: restText }, ...first.children.slice(1)] })
+              bodyChildren.push(...kids.slice(1))
+            } else {
+              const restFirst = first.children.slice(1)
+              if (restFirst.length) bodyChildren.push({ ...first, children: restFirst })
+              bodyChildren.push(...kids.slice(1))
+            }
+            const titleParam = title ? `, title: ${typstString(title)}` : ''
+            return [`#admonition(${typstString(kind)}${titleParam})[`, ...this.serialize(bodyChildren, false), ']']
+          }
+        }
         return ['#quote(block: true)[', ...this.nested(node), ']']
+      }
       case 'list':
         return this.listLines(node)
       case 'table':
@@ -257,7 +293,18 @@ export class Compiler {
 
   private content(nodes: AnyNode[]): string {
     let out = ''
-    for (const node of nodes) out += this.inline(node)
+    let prevExpr = false
+    for (const node of nodes) {
+      const piece = this.inline(node)
+      // 表达式（#strong[…] 等）后紧跟以 ( 或 { 开头的文本会被 Typst 解析为
+      // 调用参数（如 **协程**(说明) -> #strong[协程](说明) 报错），转义首字符
+      if (prevExpr && node.type === 'text' && /^[({]/.test(piece)) {
+        out += '\\' + piece
+      } else {
+        out += piece
+      }
+      prevExpr = piece.startsWith('#')
+    }
     return out
   }
 
@@ -333,6 +380,12 @@ export class Compiler {
         this.warn(`无效的内部锚点 ${url}`, node)
         return text
       }
+      // 悬空锚点（Typst 对不存在的 label 直接报错）：降级为纯文本。
+      // 优先用整本书的全局 label 集合（跨章节锚点），缺省用本文档内 label
+      if (!(this.opts.knownLabels ?? this.labels).has(label)) {
+        this.warn(`锚点 ${url} 无对应标题，已转为纯文本`, node)
+        return text
+      }
       return `#link(<${label}>)[${text}]`
     }
     return `#link(${typstString(url)})[${text}]`
@@ -347,4 +400,22 @@ function plainText(node: AnyNode): string {
 
 export function compileMdast(root: Root, opts?: CompileOptions): CompileOutput {
   return new Compiler(opts).compile(root)
+}
+
+/**
+ * 收集 markdown 中全部标题 label（与编译阶段相同的去重后缀规则），
+ * 供整本书合并编译时做跨章节锚点解析（knownLabels）。
+ */
+export function collectHeadingLabels(md: string): Set<string> {
+  const root = parseMarkdown(md)
+  const seen = new Map<string, number>()
+  const labels = new Set<string>()
+  const walk = (node: any) => {
+    if (node?.type === 'heading') {
+      labels.add(uniqueSlug(slugifyHeading(plainText(node)), seen))
+    }
+    for (const child of node?.children ?? []) walk(child)
+  }
+  walk(root)
+  return labels
 }

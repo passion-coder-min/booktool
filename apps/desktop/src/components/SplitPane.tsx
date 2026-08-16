@@ -73,7 +73,7 @@ export default function SplitPane({
 
   return (
     <div ref={containerRef} style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-      <div style={{ width: `${ratio * 100}%`, display: 'flex', flexDirection: 'column', minWidth: 0 }}>{left}</div>
+      <div style={{ width: `${ratio * 100}%`, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>{left}</div>
       <div
         className="split-handle"
         onMouseDown={onDown}
@@ -93,7 +93,7 @@ export default function SplitPane({
           }}
         />
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>{right}</div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>{right}</div>
     </div>
   )
 }

@@ -34,11 +34,20 @@ export interface Api {
     chapterMove: (dir: string, path: string, dirn: number) => Promise<import('@booktool/shared').LoadedBook>
     readAsset: (dir: string, rel: string) => Promise<string>
     compile: (dir: string, opts?: { outputName?: string }) => Promise<import('@booktool/shared').CompileReport>
-    openPdf: (dir: string) => Promise<string | null>
+    openPdf: (dir: string, pdfPath?: string) => Promise<string | null>
+    search: (dir: string, query: string) => Promise<import('@booktool/shared').SearchMatch[]>
+    openDirectory: () => Promise<import('@booktool/shared').WorkspaceInfo | null>
+    removeExternal: (dir: string) => Promise<import('@booktool/shared').WorkspaceInfo>
+  }
+  file: {
+    open: () => Promise<{ absPath: string; name: string; content: string } | null>
+    save: (absPath: string, content: string) => Promise<boolean>
+    compile: (absPath: string) => Promise<import('@booktool/shared').CompileReport | null>
   }
   filePath: (file: File) => string
   image: {
     import: (bookDir: string, srcAbs: string, chapterPath: string) => Promise<string>
+    paste: (bookDir: string, bytes: ArrayBuffer, mime: string, chapterPath: string) => Promise<string>
     pick: () => Promise<string | null>
   }
   work: {

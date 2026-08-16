@@ -3,7 +3,7 @@
  * mock electron 的 app 路径；跳过条件同 e2e（缺 typst/mmdc）。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -67,5 +67,88 @@ describe('compileBook 集成（桌面管线）', { timeout: 240_000 }, () => {
     const main = readFileSync(join(bookDir, 'build', 'main.typ'), 'utf8')
     expect(main).toContain('cjk-latin-spacing: auto')
     expect(main).toContain('#show emph: it => text(weight: 600')
+  })
+})
+
+describe('compileBook Mermaid 容错（空块/渲染失败不中止）', { timeout: 240_000 }, () => {
+  it('空块跳过 + 非法图占位：编译成功且产生 warning', async () => {
+    const typst = findTypst()
+    if (!typst) return console.warn('跳过：未找到 typst')
+
+    const userData = join(tmpdir(), 'booktool-test')
+    const binDir = join(userData, 'binaries')
+    mkdirSync(binDir, { recursive: true })
+    const localTypst = join(binDir, 'typst')
+    if (!existsSync(localTypst) && typst !== 'typst') {
+      const { copyFileSync, chmodSync } = await import('node:fs')
+      copyFileSync(typst, localTypst)
+      chmodSync(localTypst, 0o755)
+    }
+
+    const { compileBook } = await import('../electron/main/compiler')
+    const ws = join(tmpdir(), 'booktool-mermaid-ws')
+    const bookDir = join(ws, 'book')
+    const src = join(bookDir, 'src')
+    rmSync(bookDir, { recursive: true, force: true }) // 清理跨运行残留（mermaid 缓存会掩盖渲染路径）
+    mkdirSync(src, { recursive: true })
+    writeFileSync(join(bookDir, 'book.toml'), `[book]\ntitle = "容错"\nauthors = []\n`)
+    writeFileSync(join(src, 'SUMMARY.md'), `- [章](ch.md)\n`)
+    // 空块（应跳过）+ 非法语法（mmdc 失败 -> 占位 SVG）+ 正常文本
+    writeFileSync(
+      join(src, 'ch.md'),
+      [
+        '# 容错章',
+        '',
+        '```mermaid',
+        '',
+        '```',
+        '',
+        '```mermaid',
+        'this is not valid mermaid at all ((((',
+        '```',
+        '',
+        '正文结尾。',
+        '',
+      ].join('\n'),
+    )
+
+    const report = await compileBook(bookDir, undefined, { outputName: 'mermaid.pdf' })
+    if (!report.ok) console.error(JSON.stringify(report.diagnostics, null, 2))
+    expect(report.ok).toBe(true)
+    expect(existsSync(report.pdfPath!)).toBe(true)
+    // 空块 -> 跳过警告；非法图 -> 占位警告
+    expect(report.diagnostics.some((d) => d.message.includes('空的 Mermaid 代码块'))).toBe(true)
+    expect(report.diagnostics.some((d) => d.message.includes('Mermaid 渲染失败（已用占位图替代）') && d.file === 'ch.md' && d.line === 7)).toBe(true)
+  })
+})
+
+describe('compileSingleFile 集成（单文件导出 PDF）', { timeout: 240_000 }, () => {
+  it('单个 md 文件导出 PDF（含中文混排/表格/脚注）', async () => {
+    const typst = findTypst()
+    if (!typst) return console.warn('跳过：未找到 typst')
+
+    const userData = join(tmpdir(), 'booktool-test')
+    const binDir = join(userData, 'binaries')
+    mkdirSync(binDir, { recursive: true })
+    const localTypst = join(binDir, 'typst')
+    if (!existsSync(localTypst) && typst !== 'typst') {
+      const { copyFileSync, chmodSync } = await import('node:fs')
+      copyFileSync(typst, localTypst)
+      chmodSync(localTypst, 0o755)
+    }
+
+    const { compileSingleFile } = await import('../electron/main/compiler')
+    const dir = join(tmpdir(), `booktool-single-${Date.now()}`)
+    mkdirSync(dir, { recursive: true })
+    const md = join(dir, 'note.md')
+    writeFileSync(md, '# 笔记\n\n中文与 English 混排。\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n脚注[^1]。\n\n[^1]: 脚注内容。\n')
+    const outPdf = join(dir, 'note.pdf')
+
+    const report = await compileSingleFile(md, outPdf)
+    if (!report.ok) console.error(JSON.stringify(report.diagnostics, null, 2))
+    expect(report.ok).toBe(true)
+    expect(existsSync(outPdf)).toBe(true)
+    // 产物体积非空
+    expect(readFileSync(outPdf).length).toBeGreaterThan(1000)
   })
 })

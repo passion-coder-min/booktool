@@ -1,5 +1,7 @@
-import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
 import type Vditor from 'vditor'
+import { api } from '../api'
+import { imageSrcToUrl } from './rehypeImages'
 import {
   tableTemplate,
   admonitionTemplate,
@@ -13,6 +15,8 @@ export interface VditorEditorProps {
   value: string
   docKey: string
   onChange: (v: string) => void
+  /** 图片相对路径的基准绝对目录（章节/单文件/维基所在目录） */
+  baseDir: string
   gotoLine?: { line: number; nonce: number } | null
   handleRef?: RefObject<EditorHandle | null>
   /** 初始化失败回调（资源缺失等），父组件可切换到源码模式 */
@@ -28,14 +32,33 @@ let vditorModule: typeof import('vditor').default | null = null
  * 光标所在行显示 Markdown 源码，其余行实时渲染。
  * 离线资源经 public/vditor 提供（cdn: './vditor'），不依赖外网。
  */
-export default function VditorEditor({ value, docKey, onChange, gotoLine, handleRef, onError, onDropImage }: VditorEditorProps) {
+export default function VditorEditor({ value, docKey, onChange, baseDir, gotoLine, handleRef, onError, onDropImage }: VditorEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const vdRef = useRef<Vditor | null>(null)
+  const observerRef = useRef<MutationObserver | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const gotoLineRef = useRef(gotoLine)
   gotoLineRef.current = gotoLine
+  const baseDirRef = useRef(baseDir)
+  baseDirRef.current = baseDir
+
+  /**
+   * IR 模式下 Lute 把图片渲染为 <img src="显示" data-src="原始路径">，
+   * 而 getValue() 反推 markdown 只读 data-src--因此仅改写 src 用于显示，
+   * 不会污染保存的文档内容。幂等：已是目标值则跳过，避免 observer 循环。
+   */
+  const rewriteImgs = useCallback(() => {
+    const host = hostRef.current
+    const dir = baseDirRef.current
+    if (!host || !dir) return
+    for (const img of host.querySelectorAll('img')) {
+      const raw = img.getAttribute('data-src') || img.getAttribute('src') || ''
+      const target = imageSrcToUrl(dir, raw, (abs) => api.fileUrl(abs))
+      if (target !== null && img.getAttribute('src') !== target) img.setAttribute('src', target)
+    }
+  }, [])
 
   useImperativeHandle(
     handleRef,
@@ -79,12 +102,20 @@ export default function VditorEditor({ value, docKey, onChange, gotoLine, handle
           theme: { current: 'light', path: './vditor/dist/css/content-theme' },
           math: { engine: 'KaTeX' },
           hljs: { style: 'github', lineNumber: false, enable: true },
+          // GitHub callout（> [!NOTE] 等）：Vditor 3.11+ 原生支持（Lute 渲染 .callout 块），
+          // 与 HTML 预览 / Typst PDF 管线同源，因此所见即所得内即可见提示框
+          markdown: { callout: true, footnotes: true },
         },
         counter: { enable: false },
         input: (v) => onChangeRef.current(v),
         toolbar: [],
       })
         vdRef.current = vd
+        // 已渲染内容中的相对路径图片 -> booktool-file 协议；后续 DOM 变化（输入/重渲染）由 observer 兜底
+        rewriteImgs()
+        const observer = new MutationObserver(() => rewriteImgs())
+        observer.observe(hostRef.current, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'data-src'] })
+        observerRef.current = observer
       } catch (err) {
         if (disposed) return
         const msg = String(err)
@@ -94,11 +125,18 @@ export default function VditorEditor({ value, docKey, onChange, gotoLine, handle
     })()
     return () => {
       disposed = true
+      observerRef.current?.disconnect()
+      observerRef.current = null
       vdRef.current?.destroy()
       vdRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey])
+
+  // 基准目录变化（切换章节/文件）时重写当前已渲染的图片，无需重建编辑器
+  useEffect(() => {
+    rewriteImgs()
+  }, [baseDir, rewriteImgs])
 
   if (failed) {
     return (

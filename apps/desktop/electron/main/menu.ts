@@ -95,12 +95,22 @@ export function setupMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-/** 调试辅助：BOOKTOOL_SCREENSHOT=/path.png 启动 5 秒后截图并退出；BOOKTOOL_CHECK_SCROLL=1 时输出编辑区滚动自检 */
+/** 调试辅助：
+ *  - BOOKTOOL_SCREENSHOT=/path.png —— 启动后截图并退出（BOOKTOOL_SHOT_DELAY 自定义等待毫秒）
+ *  - BOOKTOOL_CHECK_SCROLL=1 —— 输出编辑区滚动自检
+ *  - BOOKTOOL_UI_DUMP=1 —— 输出布局度量 + 渲染进程 console
+ */
 export function setupScreenshotHook(win: BrowserWindow) {
   const target = process.env.BOOKTOOL_SCREENSHOT
   if (!target) return
+  const delay = Number(process.env.BOOKTOOL_SHOT_DELAY || 5000)
   setTimeout(async () => {
     try {
+      if (process.env.BOOKTOOL_UI_DUMP) {
+        win.webContents.on('console-message', (_e, _level, message) => {
+          console.log('[renderer-console]', message.slice(0, 300))
+        })
+      }
       if (process.env.BOOKTOOL_CHECK_SCROLL) {
         const info = await win.webContents.executeJavaScript(`(() => {
           const el = document.querySelector('.vditor-ir pre.vditor-reset') || document.querySelector('.cm-scroller') || document.querySelector('.vditor') || document.querySelector('.editor-host')
@@ -121,6 +131,33 @@ export function setupScreenshotHook(win: BrowserWindow) {
         })()`)
         console.log('[scroll-check]', info)
       }
+      if (process.env.BOOKTOOL_UI_DUMP) {
+        const dump = await win.webContents.executeJavaScript(`(() => {
+          const r = (sel) => {
+            const el = document.querySelector(sel)
+            if (!el) return null
+            const b = el.getBoundingClientRect()
+            const cs = getComputedStyle(el)
+            return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height), fontSize: cs.fontSize, overflowY: cs.overflowY, display: cs.display, padding: cs.padding }
+          }
+          const eh = document.querySelector('.editor-host')
+          const vd = document.querySelector('.vditor')
+          return JSON.stringify({
+            bodyText: document.body.innerText.slice(0, 160),
+            hash: location.hash,
+            editorHostHTML: eh ? (eh.className + ' | ' + eh.innerHTML.slice(0, 200)) : null,
+            vditorCls: vd ? (String(vd.className) + ' childCount=' + vd.childElementCount) : 'NO .vditor',
+            viewport: { w: innerWidth, h: innerHeight },
+            sidebar: r('.sidebar'),
+            editorToolbar: r('.editor-toolbar'),
+            editorHost: r('.editor-host'),
+            preview: r('.preview'),
+            diagPanel: r('.diag-panel'),
+            fontStack: getComputedStyle(document.querySelector('.vditor-ir pre.vditor-reset') || document.body).fontSize,
+          })
+        })()`)
+        console.log('[ui-dump]', dump)
+      }
       const img = await win.webContents.capturePage()
       const fs = await import('node:fs')
       fs.writeFileSync(target, img.toPNG())
@@ -129,5 +166,5 @@ export function setupScreenshotHook(win: BrowserWindow) {
       console.error('[screenshot] failed', err)
     }
     app.quit()
-  }, 5000)
+  }, delay)
 }

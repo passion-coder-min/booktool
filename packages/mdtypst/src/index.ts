@@ -1,5 +1,5 @@
 export { parseMarkdown, createParser } from './parse'
-export { compileMdast, compileMarkdown, extractMermaid } from './mermaid'
+export { compileMdast, compileMarkdown, extractMermaid, collectHeadingLabels } from './mermaid'
 export { renderMainTypst, renderTemplate } from './template'
 export { latexToTypst } from './math'
 export { escapeTypstText, escapeTypstString, typstString } from './escape'

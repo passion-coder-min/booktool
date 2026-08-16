@@ -80,6 +80,8 @@ export interface Diagnostic {
   /** 生成的 .typ 文件与行号（调试用） */
   typFile: string
   typLine: number
+  /** 详细上下文：typst 原始错误块 / 源码行片段 / 提示（底部诊断面板展开显示） */
+  detail?: string
 }
 
 export interface CompileReport {
@@ -91,8 +93,21 @@ export interface CompileReport {
   mermaidCached: number
 }
 
+/** 全文搜索命中 */
+export interface SearchMatch {
+  /** 源 markdown 文件（相对书籍根） */
+  file: string
+  line: number
+  /** 命中行文本 */
+  text: string
+}
+
+
 export interface WorkspaceInfo {
   root: string
+  /** 工作区内 books/ 下的书籍名 */
   books: string[]
+  /** 外部打开的书籍（mdBook 兼容目录，原位置引用） */
+  externalBooks: { name: string; dir: string }[]
   projects: Project[]
 }

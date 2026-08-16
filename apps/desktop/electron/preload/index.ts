@@ -27,11 +27,21 @@ const api = {
     readAsset: (dir: string, rel: string) => ipcRenderer.invoke(IPC.bookReadAsset, dir, rel),
     compile: (dir: string, opts?: { outputName?: string }) =>
       ipcRenderer.invoke(IPC.bookCompile, dir, opts),
-    openPdf: (dir: string) => ipcRenderer.invoke(IPC.bookOpenPdf, dir),
+    openPdf: (dir: string, pdfPath?: string) => ipcRenderer.invoke(IPC.bookOpenPdf, dir, pdfPath),
+    search: (dir: string, query: string) => ipcRenderer.invoke(IPC.bookSearch, dir, query),
+    openDirectory: () => ipcRenderer.invoke(IPC.bookOpenDirectory),
+    removeExternal: (dir: string) => ipcRenderer.invoke(IPC.bookRemoveExternal, dir),
+  },
+  file: {
+    open: () => ipcRenderer.invoke(IPC.fileOpen),
+    save: (absPath: string, content: string) => ipcRenderer.invoke(IPC.fileSave, absPath, content),
+    compile: (absPath: string) => ipcRenderer.invoke(IPC.fileCompile, absPath),
   },
   image: {
     import: (bookDir: string, srcAbs: string, chapterPath: string) =>
       ipcRenderer.invoke(IPC.imageImport, bookDir, srcAbs, chapterPath),
+    paste: (bookDir: string, bytes: ArrayBuffer, mime: string, chapterPath: string) =>
+      ipcRenderer.invoke(IPC.imagePaste, bookDir, bytes, mime, chapterPath),
     pick: () => ipcRenderer.invoke('image:pick'),
   },
   work: {
@@ -58,8 +68,8 @@ const api = {
     ipcRenderer.on('menu-cmd', listener)
     return () => ipcRenderer.removeListener('menu-cmd', listener)
   },
-  /** 本地文件经自定义协议供预览使用 */
-  fileUrl: (absPath: string) => 'booktool-file://' + encodeURIComponent(absPath),
+  /** 本地文件经自定义协议供预览使用：booktool-file://local/<绝对路径>（逐段编码，host 固定 local 以保住路径首段） */
+  fileUrl: (absPath: string) => 'booktool-file://local' + absPath.split('/').map(encodeURIComponent).join('/'),
 }
 
 contextBridge.exposeInMainWorld('api', api)

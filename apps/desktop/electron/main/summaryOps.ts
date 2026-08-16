@@ -72,6 +72,24 @@ export function moveChapter(items: SummaryItem[], path: string, dir: -1 | 1): { 
   return { items, moved: true }
 }
 
+/** 把 fromPath 移到 toPath 之前/之后（同一父级内）；不同父级或原地返回 false（拖拽调序用） */
+export function moveChapterTo(
+  items: SummaryItem[],
+  fromPath: string,
+  toPath: string,
+  before: boolean,
+): { items: SummaryItem[]; moved: boolean } {
+  const from = locate(items, fromPath)
+  const to = locate(items, toPath)
+  if (!from || !to || from.parent !== to.parent) return { items, moved: false }
+  if (from.index === to.index) return { items, moved: false }
+  const [it] = from.parent.splice(from.index, 1)
+  let toIdx = to.index
+  if (from.index < to.index) toIdx-- // 前面的元素被移除后，目标索引前移一位
+  to.parent.splice(before ? toIdx : toIdx + 1, 0, it)
+  return { items, moved: true }
+}
+
 /** 更新章节路径（文件重命名后同步） */
 export function retitlePath(items: SummaryItem[], oldPath: string, newPath: string): SummaryItem[] {
   const hit = locate(items, oldPath)

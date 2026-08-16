@@ -1,14 +1,14 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
-import { join, dirname, extname, basename } from 'node:path'
+import { join, dirname, extname, basename, relative } from 'node:path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, copyFileSync } from 'node:fs'
-import { IPC, type CompileReport, type LoadedBook, type Task, type WorkspaceInfo } from '@booktool/shared'
-import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace } from './workspace'
+import { IPC, type CompileReport, type LoadedBook, type SearchMatch, type Task, type WorkspaceInfo } from '@booktool/shared'
+import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace, chooseExternalBook, removeExternalBook } from './workspace'
 import {
   loadBook, readChapter, writeChapter, resolveAsset, atomicWrite,
   createBook, renameBook, deleteBook, writeBookToml,
   chapterCreate, chapterRename, chapterDelete, chapterMove,
 } from './books'
-import { compileBook, pdfPathOf } from './compiler'
+import { compileBook, pdfPathOf, compileSingleFile } from './compiler'
 import { listTasks, createTask, updateTask, deleteTask, type TaskInput } from './tasks'
 
 export function registerIpc() {
@@ -107,30 +107,125 @@ export function registerIpc() {
       return report
     }
   })
-  ipcMain.handle(IPC.bookOpenPdf, (_e, bookDir: string) => {
-    const p = pdfPathOf(bookDir)
+  ipcMain.handle(IPC.bookOpenPdf, (_e, bookDir: string, pdfPath?: string) => {
+    // 优先使用本次编译的实际产物路径（可能是 output/book.pdf 或实时编译的 build/preview.pdf）；
+    // 未提供时回退到默认产物（兼容旧调用方）。
+    const p = pdfPath && existsSync(pdfPath) ? pdfPath : pdfPathOf(bookDir)
     if (p) void shell.openPath(p)
     return p
   })
 
-  /** 图片导入：复制到章节同目录 assets/ 并返回相对路径（拖拽/本地选择共用） */
-  ipcMain.handle(IPC.imageImport, (_e, bookDir: string, srcAbs: string, chapterPath: string) => {
+  // 打开外部目录（mdBook 兼容书籍），原位置引用
+  ipcMain.handle(IPC.bookOpenDirectory, () => chooseExternalBook())
+  ipcMain.handle(IPC.bookRemoveExternal, (_e, dir: string) => {
+    removeExternalBook(dir)
+    return scanWorkspace()
+  })
+
+  // 打开单个 markdown 文件（独立编辑）
+  ipcMain.handle(IPC.fileOpen, async (): Promise<{ absPath: string; name: string; content: string } | null> => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const absPath = res.filePaths[0]
+    return { absPath, name: basename(absPath), content: readFileSync(absPath, 'utf8') }
+  })
+  ipcMain.handle(IPC.fileSave, (_e, absPath: string, content: string) => {
+    atomicWrite(absPath, content)
+    return true
+  })
+  // 单个 markdown 文件导出 PDF：先选保存位置，再编译
+  ipcMain.handle(
+    IPC.fileCompile,
+    async (_e, fileAbs: string): Promise<CompileReport | null> => {
+      const def = join(dirname(fileAbs), `${basename(fileAbs, extname(fileAbs))}.pdf`)
+      const res = await dialog.showSaveDialog({ defaultPath: def, filters: [{ name: 'PDF', extensions: ['pdf'] }] })
+      if (res.canceled || !res.filePath) return null
+      try {
+        const report = await compileSingleFile(fileAbs, res.filePath, (msg) => send(IPC.compileDiagnostics, { status: msg }))
+        send(IPC.compileDiagnostics, { report })
+        return report
+      } catch (err) {
+        const report: CompileReport = {
+          ok: false,
+          pdfPath: null,
+          diagnostics: [{ severity: 'error', message: String(err), file: '', line: 0, typFile: '', typLine: 0 }],
+          durationMs: 0,
+          mermaidRendered: 0,
+          mermaidCached: 0,
+        }
+        send(IPC.compileDiagnostics, { report })
+        return report
+      }
+    },
+  )
+
+  /** 全文搜索：在当前书籍全部章节中查找（大小写不敏感子串），返回 {file,line,text} */
+  ipcMain.handle(IPC.bookSearch, (_e, bookDir: string, query: string): SearchMatch[] => {
+    const q = (query || '').trim().toLowerCase()
+    if (!q) return []
+    const book = loadBook(bookDir)
+    const out: SearchMatch[] = []
+    for (const ch of book.chapters) {
+      const md = readChapter(bookDir, book.config.srcDir, ch.path)
+      md.split(/\r?\n/).forEach((text, idx) => {
+        if (text.toLowerCase().includes(q)) {
+          out.push({ file: ch.path, line: idx + 1, text })
+        }
+      })
+    }
+    return out
+  })
+
+  /**
+   * 保存书籍图片：统一放到 书籍根/image/<文档名>/image_<时间戳>.<ext>，
+   * 返回相对章节所在目录的 markdown 引用（拖拽/本地选择/粘贴共用）。
+   */
+  function saveBookImage(
+    bookDir: string,
+    chapterPath: string,
+    data: { srcAbs?: string; bytes?: Uint8Array; ext?: string },
+  ): string {
     const srcDir = loadBook(bookDir).config.srcDir
     const base = join(bookDir, srcDir)
-    const chapterDir = chapterPath.includes('/') ? dirname(chapterPath) : ''
-    const assetsDir = join(base, chapterDir, 'assets')
-    mkdirSync(assetsDir, { recursive: true })
-    const ext = (extname(srcAbs) || '.png').toLowerCase()
+    const docName = basename(chapterPath, extname(chapterPath)) || 'chapter'
+    const imageDir = join(bookDir, 'image', docName)
+    mkdirSync(imageDir, { recursive: true })
+    const ext = (data.ext ?? (data.srcAbs ? extname(data.srcAbs) : '.png')).toLowerCase() || '.png'
     const d = new Date()
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
-    let name = `img-${stamp}${ext}`
-    let dest = join(assetsDir, name)
+    let name = `image_${stamp}${ext}`
+    let dest = join(imageDir, name)
     for (let k = 0; existsSync(dest); k++) {
-      name = `img-${stamp}-${k}${ext}`
-      dest = join(assetsDir, name)
+      name = `image_${stamp}-${k}${ext}`
+      dest = join(imageDir, name)
     }
-    copyFileSync(srcAbs, dest)
-    return chapterDir ? `assets/${name}` : `assets/${name}`
+    if (data.srcAbs) copyFileSync(data.srcAbs, dest)
+    else if (data.bytes) writeFileSync(dest, data.bytes)
+    // 相对章节所在目录的引用（src/ 下嵌套章节用 ../ 回溯）
+    const chapterDirAbs = join(base, dirname(chapterPath))
+    return relative(chapterDirAbs, dest).split('\\').join('/')
+  }
+
+  /** 图片导入（拖拽 / 本地选择共用）：保存到 image/<文档名>/ 并返回相对引用 */
+  ipcMain.handle(IPC.imageImport, (_e, bookDir: string, srcAbs: string, chapterPath: string) => {
+    return saveBookImage(bookDir, chapterPath, { srcAbs })
+  })
+
+  /** 图片粘贴（Ctrl+V 截图/图片）：保存到 image/<文档名>/ 并返回相对引用 */
+  ipcMain.handle(IPC.imagePaste, (_e, bookDir: string, bytes: Uint8Array, mime: string, chapterPath: string) => {
+    const extByMime: Record<string, string> = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'image/bmp': '.bmp',
+      'image/svg+xml': '.svg',
+    }
+    const ext = extByMime[(mime || '').toLowerCase()] ?? '.png'
+    return saveBookImage(bookDir, chapterPath, { bytes, ext })
   })
 
   /** 图片导入（文件选择对话框版）：返回选中文件的绝对路径 */
@@ -343,6 +438,9 @@ BookTool 是一个**本地优先**的知识出版与工作管理工具：左手 
 打开右侧章节 → 编辑 → 点击「编译 PDF」。首次编译会自动下载 Typst 编译器。
 :::
 
+> [!TIP] 30 秒上手
+> 打开右侧章节 → 编辑 → 点击「编译 PDF」。首次编译会自动下载 Typst 编译器。
+
 > 好的工具应该让你忘记工具本身，专注于内容。
 
  footnote 示例[^1]。
@@ -446,6 +544,9 @@ const demoWikiHome = () => `# 演示项目 Wiki
 :::note
 任务与日历中的卡片可以**拖拽**：看板拖动改状态，日历拖动改计划日期。
 :::
+
+> [!NOTE]
+> 任务与日历中的卡片可以**拖拽**：看板拖动改状态，日历拖动改计划日期。
 `
 
 const demoWikiDesign = () => `# 设计笔记

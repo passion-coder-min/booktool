@@ -61,6 +61,7 @@ export default function WikiPane({ project, file }: Props) {
           <VditorEditor
             value={doc}
             docKey={`${project.id}/${file}`}
+            baseDir={baseDir}
             onChange={onChange}
             handleRef={vdHandleRef}
             key={`ir-${project.id}/${file}`}

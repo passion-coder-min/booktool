@@ -1,24 +1,59 @@
 import { app, dialog } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import type { WorkspaceInfo, Project, ProjectMeta } from '@booktool/shared'
+
+interface ExternalBookRef {
+  name: string
+  dir: string
+}
 
 interface Settings {
   workspaceRoot: string | null
+  /** 外部打开的书籍（mdBook 兼容目录，原位置引用） */
+  externalBooks?: ExternalBookRef[]
 }
 
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
 
 export function readSettings(): Settings {
   try {
-    return JSON.parse(readFileSync(settingsFile(), 'utf8'))
+    const s = JSON.parse(readFileSync(settingsFile(), 'utf8')) as Settings
+    return { externalBooks: [], ...s }
   } catch {
-    return { workspaceRoot: null }
+    return { workspaceRoot: null, externalBooks: [] }
   }
 }
 
 export function writeSettings(s: Settings) {
   writeFileSync(settingsFile(), JSON.stringify(s, null, 2))
+}
+
+/** 注册一个外部书籍目录（mdBook 兼容），按目录名去重 */
+export function addExternalBook(dir: string): void {
+  const s = readSettings()
+  const name = basename(dir) || '未命名书籍'
+  const list = (s.externalBooks ?? []).filter((b) => b.dir !== dir)
+  list.push({ name, dir })
+  writeSettings({ ...s, externalBooks: list })
+}
+
+/** 移除外部书籍引用（不删目录） */
+export function removeExternalBook(dir: string): void {
+  const s = readSettings()
+  writeSettings({ ...s, externalBooks: (s.externalBooks ?? []).filter((b) => b.dir !== dir) })
+}
+
+/** 选择并注册一个外部书籍目录 */
+export async function chooseExternalBook(): Promise<WorkspaceInfo | null> {
+  const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+  if (res.canceled || !res.filePaths[0]) return null
+  const dir = res.filePaths[0]
+  // 目录须是书籍形态：存在 src/SUMMARY.md、src/*.md 或 book.toml 之一
+  const isBook = existsSync(join(dir, 'book.toml')) || existsSync(join(dir, 'src', 'SUMMARY.md'))
+  if (!isBook) throw new Error('所选目录不是书籍：需包含 book.toml 或 src/SUMMARY.md')
+  addExternalBook(dir)
+  return scanWorkspace()
 }
 
 export function getWorkspaceRoot(): string {
@@ -53,6 +88,8 @@ export function scanWorkspace(): WorkspaceInfo {
   const books = existsSync(booksRoot)
     ? readdirSync(booksRoot, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
     : []
+  // 外部书籍：保留仍存在的目录
+  const externalBooks = (readSettings().externalBooks ?? []).filter((b) => existsSync(b.dir))
 
   const projectsRoot = join(root, 'projects')
   const projects: Project[] = []
@@ -69,7 +106,7 @@ export function scanWorkspace(): WorkspaceInfo {
       projects.push({ ...meta, dir, wikiFiles, taskCount })
     }
   }
-  return { root, books, projects }
+  return { root, books, externalBooks, projects }
 }
 
 function listMd(dir: string): string[] {

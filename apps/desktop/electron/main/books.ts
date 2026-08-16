@@ -1,13 +1,15 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs'
-import { dirname, join, normalize } from 'node:path'
+import { dirname, join, normalize, basename } from 'node:path'
 import { parse, stringify } from 'smol-toml'
 import { parseSummary, flattenChapters } from '@booktool/shared'
 import type { LoadedBook, BookConfig, SummaryItem } from '@booktool/shared'
 import { readSummary, serializeSummary, renameChapter, removeChapter, moveChapter, retitlePath } from './summaryOps'
 
-/** 加载书籍：book.toml + 当前版本的 SUMMARY.md */
+/** 加载书籍：book.toml（可缺省，兼容 mdBook 默认结构）+ 当前版本的 SUMMARY.md */
 export function loadBook(bookDir: string): LoadedBook {
-  const raw = parse(readFileSync(join(bookDir, 'book.toml'), 'utf8')) as Record<string, any>
+  const tomlPath = join(bookDir, 'book.toml')
+  // mdBook 书籍可能没有 book.toml（默认 src/SUMMARY.md）
+  const raw = existsSync(tomlPath) ? (parse(readFileSync(tomlPath, 'utf8')) as Record<string, any>) : {}
   const bookTable: Record<string, any> = raw.book ?? {}
   const versionsTable: Record<string, any> = raw.versions ?? {}
 
@@ -20,7 +22,7 @@ export function loadBook(bookDir: string): LoadedBook {
   const active = versions.find((v) => v.key === activeVersion)
 
   const config: BookConfig = {
-    title: String(bookTable.title ?? '未命名书籍'),
+    title: String(bookTable.title ?? basename(bookDir) ?? '未命名书籍'),
     authors: (bookTable.authors ?? []) as string[],
     versions,
     activeVersion,

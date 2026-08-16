@@ -73,9 +73,6 @@ function AppInner() {
       } else if (mod && key === '\\') {
         e.preventDefault()
         bookCommands?.cycleLayout()
-      } else if (mod && !e.shiftKey && key === 'b' && activity !== 'book') {
-        e.preventDefault()
-        bookCommands?.toggleSidebar()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -167,7 +164,12 @@ function AppInner() {
         {activity === 'stats' && <StatsActivity workspace={workspace} />}
         {activity === 'settings' && <SettingsPage workspace={workspace} onChanged={refresh} />}
       </div>
-      <StatusBar compileInfo={bookCommands?.statusBarInfo} onOpenDiagnostics={() => bookCommands?.openDiagnostics()} />
+      <StatusBar
+        compileInfo={bookCommands?.statusBarInfo}
+        onOpenDiagnostics={() => bookCommands?.openDiagnostics()}
+        onOpenPdf={() => bookCommands?.openPdf()}
+        onPreviewPdf={() => bookCommands?.previewPdf()}
+      />
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </div>
   )

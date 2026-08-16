@@ -40,6 +40,8 @@ export function renderTemplate(): string {
     "tip": (accent: rgb("#2e9e5b"), label: "提示"),
     "warning": (accent: rgb("#e0a030"), label: "注意"),
     "danger": (accent: rgb("#d94a4a"), label: "警告"),
+    "caution": (accent: rgb("#d94a4a"), label: "警告"),
+    "important": (accent: rgb("#8250df"), label: "重要"),
   )
   let c = cfg.at(kind, default: (accent: rgb("#7a8ba0"), label: kind))
   let t = if title == auto { c.label } else { title }

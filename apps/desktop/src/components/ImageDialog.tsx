@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { api } from '../api'
 
 /**
- * 插入图片对话框 —— 两种方式：
- * 1. 图床/外链：直接填 URL
- * 2. 本地文件：选择后自动复制到章节同目录 assets/，插入相对路径（打包后 PDF 自包含）
+ * 插入图片对话框 —— 多种方式：
+ * 1. 本地文件：选择后自动复制到 书籍根/image/<文档名>/ 下（与拖拽/粘贴同目录），插入相对路径（PDF 编译自包含）
+ * 2. 图床/外链：直接填 URL
+ * （另支持编辑区直接 Ctrl+V 粘贴截图 / 拖拽图片文件，三者均存入同一 image/<文档名>/ 目录）
  */
 export default function ImageDialog({
   bookDir,
@@ -23,6 +24,8 @@ export default function ImageDialog({
   const [picked, setPicked] = useState<{ abs: string; name: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  const docName = chapterPath.split('/').pop()?.replace(/\.[^.]+$/, '') || 'chapter'
 
   const pick = async () => {
     setError('')
@@ -55,7 +58,7 @@ export default function ImageDialog({
         <h2>插入图片</h2>
         <div className="view-tabs" style={{ marginBottom: 12 }}>
           <button className={mode === 'local' ? 'active' : ''} onClick={() => setMode('local')}>
-            本地文件（复制到 assets/）
+            本地文件（image/{docName}/）
           </button>
           <button className={mode === 'url' ? 'active' : ''} onClick={() => setMode('url')}>
             图床 / 外链 URL
@@ -64,7 +67,7 @@ export default function ImageDialog({
 
         {mode === 'local' ? (
           <div className="form-row">
-            <label>选择图片（自动复制到当前章节的 assets/ 目录，PDF 编译自包含）</label>
+            <label>选择图片（自动复制到 书籍根/image/{docName}/ 目录，与 Ctrl+V 粘贴/拖拽同目录，PDF 编译自包含）</label>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="ghost" onClick={() => void pick()}>
                 选择文件…

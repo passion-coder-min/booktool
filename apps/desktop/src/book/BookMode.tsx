@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { WorkspaceInfo, LoadedBook, SummaryItem, CompileReport, Diagnostic } from '@booktool/shared'
+import type { WorkspaceInfo, LoadedBook, SummaryItem, CompileReport, Diagnostic, SearchMatch } from '@booktool/shared'
 import { api, fileUrl } from '../api'
 import { join } from '../path'
 import Editor from '../components/Editor'
@@ -11,7 +11,9 @@ import SplitPane, { usePersistedState, type LayoutMode } from '../components/Spl
 import { EditorCtx } from '../edit/EditorContext'
 import type { EditorHandle } from '../edit/formatCommands'
 import BookManagePage from './BookManagePage'
+import SingleFileMode, { type SingleFile } from './SingleFileMode'
 import ImageDialog from '../components/ImageDialog'
+import DiagnosticsPanel from '../components/DiagnosticsPanel'
 
 type PreviewMode = 'html' | 'pdf'
 type EditorMode = 'ir' | 'source'
@@ -27,7 +29,23 @@ export interface BookCommands {
   openDiagnostics(): void
   toggleSidebar(): void
   cycleLayout(): void
-  statusBarInfo?: { compiling: boolean; durationMs?: number; warnings: number; errors: number }
+  /** 编译完成后用系统查看器打开 PDF */
+  openPdf(): void
+  /** 编译完成后在应用内预览 PDF */
+  previewPdf(): void
+  statusBarInfo?: {
+    compiling: boolean
+    durationMs?: number
+    warnings: number
+    errors: number
+    ok?: boolean
+    /** 编译状态文本（含 Mermaid 渲染统计） */
+    status?: string
+    /** 相对书籍根的产物路径 */
+    pdfRel?: string | null
+    /** 产物绝对路径 */
+    pdfPath?: string | null
+  }
 }
 
 interface Props {
@@ -37,10 +55,30 @@ interface Props {
 }
 
 export default function BookMode({ workspace, onChanged, onRegisterCommands }: Props) {
-  // 两级导航：书籍管理页 ↔ 书籍工作区（URL hash 可指定初始进入工作区，用于自动化目检）
-  const [view, setView] = useState<'manage' | 'workspace'>(() =>
-    decodeURIComponent(location.hash.slice(1)).startsWith('book-workspace') ? 'workspace' : 'manage',
-  )
+  // 三级导航：书籍管理页 ↔ 书籍工作区 ↔ 单个文件编辑（URL hash 可指定初始进入，用于自动化目检：
+  // #book-workspace 打开第一本书、#single-file:<绝对路径> 打开单个文件）
+  const [view, setView] = useState<'manage' | 'workspace' | 'single'>(() => {
+    const h = decodeURIComponent(location.hash.slice(1))
+    if (h.startsWith('book-workspace')) return 'workspace'
+    if (h.startsWith('single-file:')) return 'single'
+    return 'manage'
+  })
+  const [singleFile, setSingleFile] = useState<SingleFile | null>(() => {
+    const h = decodeURIComponent(location.hash.slice(1))
+    if (h.startsWith('single-file:')) {
+      const absPath = h.slice('single-file:'.length)
+      return { absPath, name: absPath.split(/[\\/]/).pop() || '文件', content: '' }
+    }
+    return null
+  })
+  // hash 指定 single-file 时异步读取文件内容
+  useEffect(() => {
+    if (view !== 'single' || !singleFile || singleFile.content) return
+    void fetch(fileUrl(singleFile.absPath))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))))
+      .then((content) => setSingleFile((f) => (f ? { ...f, content } : f)))
+      .catch((e) => setStatus('打开文件失败：' + String(e)))
+  }, [view, singleFile])
   const [book, setBook] = useState<LoadedBook | null>(null)
   const [bookName, setBookName] = useState('')
   const [bookDir, setBookDir] = useState<string | null>(null)
@@ -52,16 +90,22 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
   const [preview, setPreview] = usePersistedState<PreviewMode>('booktool-preview-mode', 'html')
   const [layout, setLayout] = usePersistedState<LayoutMode>('booktool-layout', 'split')
   const [sidebarOpen, setSidebarOpen] = usePersistedState('booktool-sidebar', true)
+  /** 所见即所得模式下是否并排显示预览（默认关闭以铺满屏幕，可手动开启） */
+  const [irPreview, setIrPreview] = usePersistedState('booktool-ir-preview', false)
 
   const [manageTree, setManageTree] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchMatch[]>([])
   const [live, setLive] = useState(false)
   const [compiling, setCompiling] = useState(false)
   const [status, setStatus] = useState('')
   const [report, setReport] = useState<CompileReport | null>(null)
   const [pdfPath, setPdfPath] = useState<string | null>(null)
   const [pdfVersion, setPdfVersion] = useState(0)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const pdfBlobUrlRef = useRef<string | null>(null)
   const [gotoLine, setGotoLine] = useState<{ line: number; nonce: number } | null>(null)
-  const [diagOpen, setDiagOpen] = useState(true)
+  const [diagOpen, setDiagOpen] = useState(false)
   const [diagIndex, setDiagIndex] = useState(-1)
   const [imgOpen, setImgOpen] = useState(false)
 
@@ -142,6 +186,40 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
     }
   }, [])
 
+  // 编译完成后把 PDF 读入 Blob URL 供 iframe 预览。
+  // 直接以 booktool-file 协议 URL 作为 iframe src 在部分环境（GPU/自定义协议）下 PDF 预览空白（黑框），
+  // Blob URL 与 Chromium 内置 PDF 查看器配合最可靠。
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      if (!pdfPath) {
+        setPdfUrl(null)
+        return
+      }
+      try {
+        const res = await fetch(fileUrl(pdfPath))
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const blob = await res.blob()
+        if (cancelled) return
+        if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current)
+        const url = URL.createObjectURL(blob)
+        pdfBlobUrlRef.current = url
+        setPdfUrl(url)
+      } catch {
+        if (!cancelled) setPdfUrl(null)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [pdfPath, pdfVersion])
+
+  // 组件卸载时回收最后一个 Blob URL
+  useEffect(() => () => {
+    if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current)
+  }, [])
+
   const onChange = useCallback(
     (v: string) => {
       setDoc(v)
@@ -179,6 +257,78 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
     }
   }, [])
 
+  // 粘贴图片（Ctrl+V 截图/复制图片）：保存到 image/<文档名>/ 并在光标处插入引用（仅书籍工作区）
+  useEffect(() => {
+    if (view !== 'workspace') return
+    const onPaste = (e: ClipboardEvent) => {
+      const s = stateRef.current
+      if (!s.bookDir || !s.current) return
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) {
+            e.preventDefault()
+            e.stopPropagation()
+            void (async () => {
+              try {
+                const bytes = await file.arrayBuffer()
+                const rel = await api.image.paste(s.bookDir!, bytes, file.type, s.current!)
+                const handle = s.editorMode === 'ir' ? vdHandleRef.current : cmHandleRef.current
+                handle?.apply({ type: 'image', path: rel, alt: (file.name.replace(/\.[^.]+$/, '') || '图片') })
+                setStatus(`已粘贴图片 ${rel}`)
+              } catch (err) {
+                setStatus('图片粘贴失败：' + String(err))
+              }
+            })()
+            break
+          }
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste, true)
+    return () => window.removeEventListener('paste', onPaste, true)
+  }, [view])
+
+  // 全文搜索（章节，防抖 250ms）
+  useEffect(() => {
+    const s = stateRef.current
+    if (!s.bookDir || !searchQ.trim()) {
+      setSearchResults([])
+      return
+    }
+    const t = setTimeout(() => {
+      void api.book.search(s.bookDir!, searchQ.trim()).then(setSearchResults)
+    }, 250)
+    return () => clearTimeout(t)
+  }, [searchQ, bookDir])
+
+  // 编译成功后「在应用内预览」：切到 PDF 预览并把预览面板显示出来
+  const openPdfInApp = useCallback(() => {
+    setPreview('pdf')
+    if (editorMode === 'ir') setIrPreview(true)
+    else setLayout((l) => (l === 'edit' ? 'split' : l))
+  }, [editorMode, setPreview, setIrPreview, setLayout])
+
+  /** 打开章节并跳转到指定行 */
+  const gotoChapterLine = useCallback(
+    (path: string, line: number) => {
+      const s = stateRef.current
+      const jump = () => setGotoLine({ line, nonce: Date.now() })
+      if (s.current === path) {
+        if (s.editorMode !== 'source') setEditorMode('source')
+        jump()
+      } else {
+        void openChapter(path).then(() => {
+          if (stateRef.current.editorMode !== 'source') setEditorMode('source')
+          jump()
+        })
+      }
+    },
+    [openChapter, setEditorMode],
+  )
+
   const jumpToDiag = useCallback((d: Diagnostic) => {
     const s = stateRef.current
     if (!s.bookDir) return
@@ -207,8 +357,13 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
       })
   }, [reloadBook])
 
-  // 注册全局命令
+  // 注册全局命令（仅书籍工作区；单文件视图由 SingleFileMode 自行注册，避免覆盖）
   useEffect(() => {
+    if (view !== 'workspace') {
+      if (view === 'single') return // 单文件视图：命令归 SingleFileMode
+      onRegisterCommands(null)
+      return
+    }
     onRegisterCommands({
       jumpDiagnostic: (dir) => {
         const diags = (report?.diagnostics ?? []).filter((d) => d.line > 0)
@@ -225,13 +380,33 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
       saveAndCompile: () => void compile(),
       exportPdf: () => {
         void compile().then((r) => {
-          if (r?.ok && r.pdfPath) void api.book.openPdf(bookDir!)
+          if (r?.ok && r.pdfPath) void api.book.openPdf(bookDir!, r.pdfPath)
         })
       },
-      openDiagnostics: () => setDiagOpen((v) => !v),
+      openDiagnostics: () => {
+        const wasOpen = diagOpen
+        const diagsNow = report?.diagnostics ?? []
+        setDiagOpen((v) => !v)
+        // 从关闭状态打开时，自动选中第一条错误（若有）并展开详情
+        if (!wasOpen && diagIndex < 0 && diagsNow.length > 0) {
+          const firstErr = diagsNow.findIndex((d) => d.severity === 'error')
+          const idx = firstErr >= 0 ? firstErr : 0
+          setDiagIndex(idx)
+          const d = diagsNow[idx]
+          if (d && d.line > 0) jumpToDiag(d)
+        }
+      },
       toggleSidebar: () => setSidebarOpen((v) => !v),
-      cycleLayout: () => setLayout((l) => (l === 'split' ? 'edit' : l === 'edit' ? 'preview' : 'split')),
+      cycleLayout: () => {
+        // 所见即所得模式下预览已强制关闭，布局循环无意义（避免切回源码时布局意外变化）
+        if (editorMode === 'ir') return
+        setLayout((l) => (l === 'split' ? 'edit' : l === 'edit' ? 'preview' : 'split'))
+      },
       createNew,
+      openPdf: () => {
+        if (pdfPath) void api.book.openPdf(bookDir!, pdfPath)
+      },
+      previewPdf: openPdfInApp,
       get statusBarInfo() {
         const diags = report?.diagnostics ?? []
         return {
@@ -239,11 +414,15 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
           durationMs: report?.durationMs,
           warnings: diags.filter((d) => d.severity === 'warning').length,
           errors: diags.filter((d) => d.severity === 'error').length,
+          ok: report?.ok ?? false,
+          status,
+          pdfRel: pdfPath && bookDir ? (pdfPath.startsWith(bookDir) ? pdfPath.slice(bookDir.length + 1) : pdfPath) : null,
+          pdfPath,
         }
       },
     })
     return () => onRegisterCommands(null)
-  }, [onRegisterCommands, report, compiling, diagIndex, jumpToDiag, compile, createNew, setEditorMode, setPreview, setLayout, setSidebarOpen])
+  }, [view, onRegisterCommands, report, compiling, status, pdfPath, bookDir, openPdfInApp, diagIndex, jumpToDiag, compile, createNew, editorMode, setEditorMode, setPreview, setLayout, setSidebarOpen])
 
   const chapterDir = useMemo(() => {
     if (!bookDir || !current || !book) return ''
@@ -255,46 +434,86 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
 
   // -------- 第一级：书籍管理页 --------
   if (view === 'manage') {
-    return <BookManagePage workspace={workspace} onChanged={onChanged} onOpenBook={openBook} />
+    return <BookManagePage workspace={workspace} onChanged={onChanged} onOpenBook={openBook} onOpenSingleFile={(f) => { setSingleFile(f); setView('single') }} />
+  }
+
+  // -------- 单文件编辑模式（不依赖书籍结构） --------
+  if (view === 'single' && singleFile) {
+    return <SingleFileMode file={singleFile} onClose={() => setView('manage')} onRegisterCommands={onRegisterCommands} />
   }
 
   // -------- 第二级：书籍工作区 --------
   const diags = report?.diagnostics ?? []
+  // 所见即所得（IR）模式下内容实时渲染，默认强制「仅编辑」铺满屏幕；
+  // 用户可在工具栏打开「◫ 预览」并排显示；切回源码模式时恢复用户先前选择的布局。
+  const effectiveLayout: LayoutMode = editorMode === 'ir' ? (irPreview ? 'split' : 'edit') : layout
+
   const editorPane = (
-    <section className="pane">
-      <div className="pane-header">
-        <button className="ft-btn" title="侧栏开关" onClick={() => setSidebarOpen(!sidebarOpen)}>
-          ☰
-        </button>
-        <span className="doc-title">{current ?? '未选择章节'}</span>
-        <span className={`save-state${saved ? '' : ' dirty'}`}>{saved ? '✓ 已保存' : '● 保存中…'}</span>
-        <span className="spacer" />
-        <div className="view-tabs">
-          <button className={editorMode === 'ir' ? 'active' : ''} onClick={() => setEditorMode('ir')} title="所见即所得 Ctrl+E">
-            所见即所得
+    <section className="pane editor-pane">
+      <div className="editor-toolbar">
+        <div className="et-group et-left">
+          <button className="ft-btn et-icon" title="侧栏开关" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            ☰
           </button>
-          <button className={editorMode === 'source' ? 'active' : ''} onClick={() => setEditorMode('source')} title="源码 Ctrl+E">
-            源码
-          </button>
+          <span className="doc-title" title={current ?? ''}>
+            {current ?? '未选择章节'}
+          </span>
+          <span className={`save-state${saved ? '' : ' dirty'}`}>{saved ? '✓ 已保存' : '● 保存中…'}</span>
         </div>
-        <div className="view-tabs" style={{ marginLeft: 6 }} title="布局 Ctrl+\">
-          <button className={layout === 'split' ? 'active' : ''} onClick={() => setLayout('split')}>
-            ⫿ 拆分
+        <FormatToolbar disabled={!current} onImage={() => setImgOpen(true)} />
+        <div className="et-group et-right">
+          <button
+            className={`btn-compile${diagOpen && diags.length > 0 ? ' has-diag' : ''}`}
+            disabled={!bookDir || compiling}
+            onClick={() => void compile()}
+            title="保存并编译 PDF（Ctrl+S）"
+          >
+            {compiling ? '⟳ 编译中…' : '编译 PDF'}
           </button>
-          <button className={layout === 'edit' ? 'active' : ''} onClick={() => setLayout('edit')}>
-            ▮ 仅编辑
+          <button
+            className={`ft-btn et-icon diag-toggle${diags.length > 0 ? ' has-diag' : ''}`}
+            onClick={() => setDiagOpen((v) => !v)}
+            title={`编译输出 / 诊断（${diags.length}）`}
+          >
+            ⚠{diags.length > 0 ? diags.length : ''}
           </button>
-          <button className={layout === 'preview' ? 'active' : ''} onClick={() => setLayout('preview')}>
-            ◫ 仅预览
-          </button>
+          <div className="view-tabs" title="编辑模式 Ctrl+E">
+            <button className={editorMode === 'ir' ? 'active' : ''} onClick={() => setEditorMode('ir')} title="所见即所得 Ctrl+E">
+              所见即所得
+            </button>
+            <button className={editorMode === 'source' ? 'active' : ''} onClick={() => setEditorMode('source')} title="源码 Ctrl+E">
+              源码
+            </button>
+          </div>
+          {editorMode === 'source' ? (
+            <div className="view-tabs layout-tabs" title="布局 Ctrl+\">
+              <button className={layout === 'split' ? 'active' : ''} onClick={() => setLayout('split')} title="拆分（编辑 + 预览）">
+                ⫿
+              </button>
+              <button className={layout === 'edit' ? 'active' : ''} onClick={() => setLayout('edit')} title="仅编辑">
+                ▮
+              </button>
+              <button className={layout === 'preview' ? 'active' : ''} onClick={() => setLayout('preview')} title="仅预览">
+                ◫
+              </button>
+            </div>
+          ) : (
+            <button
+              className={`ft-btn et-icon preview-toggle${irPreview ? ' active' : ''}`}
+              onClick={() => setIrPreview((v) => !v)}
+              title="所见即所得模式下并排显示/隐藏预览面板"
+            >
+              ◫ 预览
+            </button>
+          )}
         </div>
       </div>
-      <FormatToolbar disabled={!current} onImage={() => setImgOpen(true)} />
       {current ? (
         editorMode === 'ir' ? (
           <VditorEditor
             value={doc}
             docKey={`${bookDir}/${current}`}
+            baseDir={chapterDir}
             onChange={onChange}
             handleRef={vdHandleRef}
             onError={(msg) => {
@@ -350,20 +569,28 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
         <button className={`primary${live ? ' live-on' : ''}`} onClick={() => setLive((v) => !v)} title="开启后保存自动编译实时预览">
           {live ? '● 实时开' : '○ 实时'}
         </button>
-        <button className="primary" disabled={!bookDir || compiling} onClick={() => void compile()}>
-          {compiling ? '⟳ 编译中…' : '编译 PDF'}
-        </button>
         {pdfPath && (
-          <button className="small" onClick={() => api.book.openPdf(bookDir!)}>
+          <button className="small" onClick={() => void api.book.openPdf(bookDir!, pdfPath)}>
             系统打开
           </button>
         )}
+        <button
+          className="small"
+          title="关闭预览面板"
+          onClick={() => {
+            if (editorMode === 'ir') setIrPreview(false)
+            else setLayout('edit')
+          }}
+        >
+          ✕
+        </button>
       </div>
-      {status && <div className="compile-status">{status}</div>}
       {preview === 'html' ? (
         <MarkdownPreview markdown={doc} baseDir={chapterDir} />
+      ) : pdfUrl ? (
+        <iframe key={pdfVersion} className="pdf-frame" src={pdfUrl} title="PDF 预览" />
       ) : pdfPath ? (
-        <iframe key={pdfVersion} className="pdf-frame" src={fileUrl(pdfPath)} title="PDF 预览" />
+        <EmptyCard icon="🖨" title="正在加载 PDF…" desc="读取编译产物中，请稍候" />
       ) : (
         <EmptyCard icon="🖨" title="编译后此处显示 PDF" desc="点击上方「编译 PDF」生成；开启「实时」后保存即自动编译刷新" />
       )}
@@ -387,13 +614,19 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
       <div className="workbench">
         {sidebarOpen && (
           <aside className="sidebar">
-            <div className="sidebar-section">
-              <button className="ghost" style={{ width: '100%' }} onClick={() => setView('manage')}>
-                ← 返回书籍列表
+            <div className="sidebar-head">
+              <span className="sidebar-book" title={bookName || '未命名书籍'}>
+                {bookName || '书籍'}
+              </span>
+              <span className="sidebar-version" title="当前编译版本源码目录">
+                {book?.config.activeVersion ? (book.config.versions.find((v) => v.key === book.config.activeVersion)?.name ?? book.config.activeVersion) : '默认 src/'}
+              </span>
+              <button className="ft-btn et-icon" title="返回书籍列表" onClick={() => setView('manage')}>
+                ←
               </button>
             </div>
             <div className="sidebar-section">
-              <div className="sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="sidebar-title">
                 文档管理
                 <span style={{ display: 'flex', gap: 4 }}>
                   <button className="small" onClick={createNew} title="新建章节">
@@ -419,32 +652,50 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
                 />
               )}
             </div>
-            {diagOpen && diags.length > 0 && (
-              <div className="sidebar-section" style={{ borderTop: '1px solid var(--border)', paddingTop: 8, maxHeight: 210, overflowY: 'auto' }}>
-                <div className="sidebar-title">诊断（{diags.length}）</div>
-                {diags.map((d, i) => (
-                  <div
-                    key={i}
-                    className={`diag-item ${d.severity}`}
-                    style={{ paddingLeft: 4, paddingRight: 4 }}
-                    onClick={() => {
-                      setDiagIndex(i)
-                      jumpToDiag(d)
-                    }}
-                  >
-                    <span>{d.severity === 'error' ? '✗' : '⚠'}</span>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.message}</span>
-                    <span className="diag-file">{d.file}:{d.line}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="sidebar-section">
+              <div className="sidebar-title">全文搜索</div>
+              <input
+                className="search-input"
+                type="text"
+                placeholder="搜索章节内容…"
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+              />
+              {searchQ.trim() && (
+                <div className="search-results">
+                  {searchResults.length === 0 ? (
+                    <div className="search-empty">无结果</div>
+                  ) : (
+                    searchResults.slice(0, 60).map((m, i) => (
+                      <div key={i} className="search-item" onClick={() => gotoChapterLine(m.file, m.line)} title={m.text}>
+                        <span className="search-file">{m.file}:{m.line}</span>
+                        <span className="search-text">{m.text.trim()}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </aside>
         )}
 
-        {layout === 'split' && <SplitPane left={editorPane} right={previewPane} />}
-        {layout === 'edit' && editorPane}
-        {layout === 'preview' && previewPane}
+        <div className="workbench-main">
+          {effectiveLayout === 'split' && <SplitPane left={editorPane} right={previewPane} />}
+          {effectiveLayout === 'edit' && editorPane}
+          {effectiveLayout === 'preview' && previewPane}
+          {diagOpen && (
+            <DiagnosticsPanel
+              diagnostics={diags}
+              selected={diagIndex}
+              onSelect={(i) => {
+                setDiagIndex(i)
+                const d = diags[i]
+                if (d && d.line > 0) jumpToDiag(d)
+              }}
+              onClose={() => setDiagOpen(false)}
+            />
+          )}
+        </div>
       </div>
     </EditorCtx.Provider>
   )

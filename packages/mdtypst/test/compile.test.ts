@@ -41,6 +41,21 @@ describe('mdast→Typst 基础块', () => {
     expect(out.typst).toContain('image("assets/mermaid-')
     expect(out.typst).toContain('caption: [Mermaid 图]')
   })
+
+  it('空的 mermaid 代码块：跳过渲染并给出警告（不产生 diagram）', () => {
+    const out = compileMarkdown('# 标题\n\n前置\n\n```mermaid\n\n```\n\n后置', {
+      resolveImage: (u) => u,
+    })
+    expect(out.diagrams).toHaveLength(0)
+    expect(out.typst).not.toContain('image("')
+    expect(out.warnings).toEqual([{ message: '空的 Mermaid 代码块，已跳过渲染', line: 5 }])
+  })
+
+  it('diagram 记录源行号（诊断回映射用）', () => {
+    const out = compileMarkdown('第一段\n\n```mermaid\ngraph TD; A-->B;\n```')
+    expect(out.diagrams).toHaveLength(1)
+    expect(out.diagrams[0].line).toBe(3)
+  })
 })
 
 describe('mdast→Typst 内联', () => {
@@ -54,6 +69,11 @@ describe('mdast→Typst 内联', () => {
     expect(t('`a"b\\c`')).toBe('#raw("a\\"b\\\\c", block: false)')
   })
 
+  it('强调后紧跟括号：转义避免被解析为函数调用', () => {
+    expect(t('**协程**(大量IO操作)方案')).toBe('#strong[协程]\\(大量IO操作)方案')
+    expect(t('*斜体*{花括号}')).toBe('#emph[斜体]\\{花括号}')
+  })
+
   it('外部链接', () => {
     expect(t('[官网](https://example.com/a?b=1)')).toBe(
       '#link("https://example.com/a?b=1")[官网]',
@@ -64,6 +84,13 @@ describe('mdast→Typst 内联', () => {
     const out = t('# 目标标题\n\n见 [说明](#目标标题)。')
     expect(out).toContain('= 目标标题 <目标标题>')
     expect(out).toContain('#link(<目标标题>)[说明]')
+  })
+
+  it('悬空锚点降级为纯文本并警告（Typst 不允许缺失 label）', () => {
+    const out = compileMarkdown('# 标题\n\n见 [说明](#不存在的锚点)。')
+    expect(out.typst).not.toContain('#link(<不存在的锚点>)')
+    expect(out.typst).toContain('见 说明。')
+    expect(out.warnings.some((w) => w.message.includes('锚点') && w.message.includes('不存在'))).toBe(true)
   })
 
   it('自动链接', () => {
@@ -132,6 +159,21 @@ describe('mdast→Typst 表格与容器', () => {
   it('带标题属性的容器', () => {
     const out = t(':::note{title="自定义标题"}\n内容\n:::')
     expect(out).toContain('#admonition("note", title: "自定义标题")[')
+  })
+
+  it('GitHub callout 无标题 → admonition', () => {
+    const out = t('> [!NOTE]\n> 内容')
+    expect(out).toBe('#admonition("note")[\n内容\n]')
+  })
+
+  it('GitHub callout 带标题 + 多行正文', () => {
+    const out = t('> [!WARNING] 注意标题\n> 第一行\n> 第二行')
+    expect(out).toBe('#admonition("warning", title: "注意标题")[\n第一行\n第二行\n]')
+  })
+
+  it('GitHub callout CAUTION 映射 danger', () => {
+    const out = t('> [!CAUTION]\n> 小心')
+    expect(out).toBe('#admonition("caution")[\n小心\n]')
   })
 })
 

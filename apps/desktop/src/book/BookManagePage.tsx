@@ -3,15 +3,18 @@ import type { WorkspaceInfo, LoadedBook } from '@booktool/shared'
 import { api } from '../api'
 import { join } from '../path'
 import EmptyCard from '../components/EmptyCard'
+import type { SingleFile } from './SingleFileMode'
 
 interface Props {
   workspace: WorkspaceInfo | null
   onChanged: () => void
   onOpenBook: (dir: string, name: string) => void
+  /** 打开单个 markdown 文件（独立编辑模式） */
+  onOpenSingleFile: (file: SingleFile) => void
 }
 
-/** 书籍管理页（出版活动第一级）：卡片网格 + CRUD + 版本管理 */
-export default function BookManagePage({ workspace, onChanged, onOpenBook }: Props) {
+/** 书籍管理页（出版活动第一级）：卡片网格 + CRUD + 版本管理 + 打开目录/单个文件 */
+export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpenSingleFile }: Props) {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [versioning, setVersioning] = useState<{ dir: string; name: string } | null>(null)
@@ -37,7 +40,39 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook }: Pro
     await guard(() => api.book.remove(name))
   }
 
-  if (!workspace || workspace.books.length === 0) {
+  /** 打开外部目录（mdBook 兼容书籍）并注册，随后自动打开 */
+  const openDirectory = async () => {
+    try {
+      setError('')
+      const prev = new Set((workspace?.externalBooks ?? []).map((b) => b.dir))
+      const ws = await api.book.openDirectory()
+      if (ws) {
+        onChanged()
+        const added = ws.externalBooks.find((b) => !prev.has(b.dir))
+        if (added) onOpenBook(added.dir, added.name)
+      }
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  /** 打开单个 markdown 文件（独立编辑，可导出 PDF） */
+  const openSingleFile = async () => {
+    try {
+      setError('')
+      const f = await api.file.open()
+      if (f) onOpenSingleFile(f)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const removeExternal = async (dir: string) => {
+    if (!confirm('移除该外部书籍引用？（不会删除原目录）')) return
+    await guard(() => api.book.removeExternal(dir))
+  }
+
+  if (!workspace || (workspace.books.length === 0 && workspace.externalBooks.length === 0)) {
     return (
       <EmptyCard
         icon="📚"
@@ -46,13 +81,21 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook }: Pro
           <>
             书籍 = 一本可编译为 PDF 的 Markdown 著作。
             <br />
-            目录结构：books/&lt;名称&gt;/book.toml + src/SUMMARY.md
+            可直接「打开目录」导入现有 mdBook 项目，或「打开单个文件」独立编辑任意 Markdown。
           </>
         }
         actions={
-          <button className="primary" onClick={() => setCreating(true)}>
-            + 新建书籍
-          </button>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <button className="primary" onClick={() => setCreating(true)}>
+              + 新建书籍
+            </button>
+            <button className="ghost" onClick={() => void openDirectory()}>
+              📂 打开目录（mdBook）
+            </button>
+            <button className="ghost" onClick={() => void openSingleFile()}>
+              📄 打开单个文件
+            </button>
+          </span>
         }
       />
     )
@@ -60,9 +103,15 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook }: Pro
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 26px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 16 }}>我的书籍（{workspace.books.length}）</h2>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 8 }}>
+        <h2 style={{ fontSize: 16 }}>我的书籍（{workspace.books.length + workspace.externalBooks.length}）</h2>
         <span style={{ flex: 1 }} />
+        <button className="ghost" onClick={() => void openDirectory()} title="导入现有 mdBook 项目目录（原位置引用）">
+          📂 打开目录
+        </button>
+        <button className="ghost" onClick={() => void openSingleFile()} title="独立编辑任意 Markdown 文件并导出 PDF">
+          📄 单个文件
+        </button>
         <button className="primary" onClick={() => setCreating(true)}>
           + 新建书籍
         </button>
@@ -79,6 +128,9 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook }: Pro
             onDelete={() => void remove(name)}
             onVersions={() => setVersioning({ dir: join(workspace.root, 'books', name), name })}
           />
+        ))}
+        {workspace.externalBooks.map((b) => (
+          <ExternalCard key={b.dir} name={b.name} dir={b.dir} onOpen={() => onOpenBook(b.dir, b.name)} onRemove={() => void removeExternal(b.dir)} />
         ))}
       </div>
 
@@ -127,6 +179,29 @@ function BookCard({
         <button onClick={onRename}>重命名</button>
         <button className="danger" onClick={onDelete}>
           删除
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ExternalCard({ name, dir, onOpen, onRemove }: { name: string; dir: string; onOpen: () => void; onRemove: () => void }) {
+  return (
+    <div className="book-card" onDoubleClick={onOpen} title={dir}>
+      <div className="book-card-cover" onClick={onOpen}>
+        <span className="book-card-glyph">📂</span>
+      </div>
+      <div className="book-card-title" onClick={onOpen}>
+        {name}
+        <span className="external-tag">外部</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dir}>
+        {dir}
+      </div>
+      <div className="book-card-actions">
+        <button onClick={onOpen}>打开</button>
+        <button className="danger" onClick={onRemove}>
+          移除
         </button>
       </div>
     </div>

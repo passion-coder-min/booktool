@@ -21,10 +21,22 @@ export const IPC = {
   chapterRename: 'chapter:rename',
   chapterDelete: 'chapter:delete',
   chapterMove: 'chapter:move',
+  chapterMoveTo: 'chapter:move-to',
   bookCompile: 'book:compile',
   bookReadAsset: 'book:read-asset',
   bookOpenPdf: 'book:open-pdf',
+  bookSearch: 'book:search',
+  /** 打开外部目录（mdBook 兼容书籍）并注册 */
+  bookOpenDirectory: 'book:open-directory',
+  /** 从工作区移除外部书籍（仅移除引用，不删目录） */
+  bookRemoveExternal: 'book:remove-external',
+  /** 打开单个 markdown 文件（独立编辑） */
+  fileOpen: 'file:open',
+  fileSave: 'file:save',
+  /** 单个 markdown 文件导出 PDF */
+  fileCompile: 'file:compile',
   imageImport: 'image:import',
+  imagePaste: 'image:paste',
 
   // 工作模式
   projectCreate: 'project:create',

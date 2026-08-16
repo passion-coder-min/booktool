@@ -19,6 +19,7 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
   const [wikiFile, setWikiFile] = useState('')
   const [view, setView] = useState<SubView>('tasks')
   const [tasks, setTasks] = useState<Task[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const refreshTasks = useCallback(() => void api.work.taskList().then(setTasks), [])
   useEffect(() => {
@@ -102,6 +103,7 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
 
   return (
     <div className="workbench">
+      {sidebarOpen && (
       <aside className="sidebar">
         <div className="sidebar-section">
           <div className="sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -191,9 +193,13 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
           </div>
         )}
       </aside>
+      )}
 
       <section className="pane">
         <div className="pane-header">
+          <button className="ft-btn et-icon" title="侧栏开关" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            ☰
+          </button>
           <strong>{project?.name}</strong>
           <span style={{ color: 'var(--muted)', fontSize: 12 }}>{project?.description}</span>
           <span className="spacer" />

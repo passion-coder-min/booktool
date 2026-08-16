@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, writeFileSync, existsSync, readFileSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, relative, basename, extname } from 'node:path'
-import { compileMarkdown, renderMainTypst, renderTemplate, type LineMapping } from '../src/index'
+import { compileMarkdown, renderMainTypst, renderTemplate, collectHeadingLabels, type LineMapping } from '../src/index'
 
 const repoRoot = join(__dirname, '../../..')
 const bookDir = join(repoRoot, 'examples', 'demo-book')
@@ -211,10 +211,16 @@ describe('端到端：示例书籍编译 PDF', { timeout: 240_000 }, () => {
     const diagrams = new Map<string, string>()
     const builds: { typFile: string; mappings: LineMapping[] }[] = []
     const warnings: string[] = []
+    // 全书合并为同一文档，跨章节锚点须全局解析（与 compileBook 一致）
+    const globalLabels = new Set<string>()
+    for (const ch of chapters) {
+      for (const l of collectHeadingLabels(readFileSync(join(srcDir, ch.file), 'utf8'))) globalLabels.add(l)
+    }
     chapters.forEach((ch, idx) => {
       const md = readFileSync(join(srcDir, ch.file), 'utf8')
       const out = compileMarkdown(md, {
         preamble: '#import "../template.typ": *',
+        knownLabels: globalLabels,
         resolveImage: (url) => {
           // root 绝对路径：auto-fit-image 位于 template.typ，须与所在文件无关
           if (url.startsWith('mermaid:')) return `/build/assets/mermaid-${url.slice(8)}.svg`
