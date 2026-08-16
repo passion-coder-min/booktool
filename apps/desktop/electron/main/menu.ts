@@ -22,6 +22,7 @@ export function setupMenu() {
         cmd('保存并编译', 'Ctrl+S', 'save-compile'),
         cmd('导出 PDF…', 'Ctrl+Shift+E', 'export-pdf'),
         cmd('新建章节 / 任务', 'Ctrl+N', 'new'),
+        cmd('打开目录', '', 'open-dir'),
         { type: 'separator' },
         { role: 'quit', label: '退出' },
       ],

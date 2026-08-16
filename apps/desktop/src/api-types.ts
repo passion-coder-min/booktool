@@ -35,6 +35,7 @@ export interface Api {
     readAsset: (dir: string, rel: string) => Promise<string>
     compile: (dir: string, opts?: { outputName?: string }) => Promise<import('@booktool/shared').CompileReport>
     openPdf: (dir: string, pdfPath?: string) => Promise<string | null>
+    openDir: (dir: string) => Promise<boolean>
     search: (dir: string, query: string) => Promise<import('@booktool/shared').SearchMatch[]>
     openDirectory: () => Promise<import('@booktool/shared').WorkspaceInfo | null>
     removeExternal: (dir: string) => Promise<import('@booktool/shared').WorkspaceInfo>

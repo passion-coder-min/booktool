@@ -28,6 +28,7 @@ const api = {
     compile: (dir: string, opts?: { outputName?: string }) =>
       ipcRenderer.invoke(IPC.bookCompile, dir, opts),
     openPdf: (dir: string, pdfPath?: string) => ipcRenderer.invoke(IPC.bookOpenPdf, dir, pdfPath),
+    openDir: (dir: string) => ipcRenderer.invoke(IPC.bookOpenFolder, dir),
     search: (dir: string, query: string) => ipcRenderer.invoke(IPC.bookSearch, dir, query),
     openDirectory: () => ipcRenderer.invoke(IPC.bookOpenDirectory),
     removeExternal: (dir: string) => ipcRenderer.invoke(IPC.bookRemoveExternal, dir),

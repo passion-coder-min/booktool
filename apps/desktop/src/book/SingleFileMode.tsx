@@ -158,6 +158,7 @@ export default function SingleFileMode({ file, onClose, onRegisterCommands }: Pr
       openDiagnostics: () => setDiagOpen((v) => !v),
       openPdf: openSystem,
       previewPdf: openPdfInApp,
+      openDirectory: () => void api.book.openDir(dirname(file.absPath)),
       get statusBarInfo() {
         const diags = report?.diagnostics ?? []
         return {
@@ -307,7 +308,8 @@ export default function SingleFileMode({ file, onClose, onRegisterCommands }: Pr
     <EditorCtx.Provider value={editorMode === 'ir' ? vdHandleRef.current : cmHandleRef.current}>
       <div className="workbench" style={{ flexDirection: 'column' }}>
         {toolbar}
-        <div className="workbench-main" style={{ flexDirection: 'row' }}>
+        {/* workbench-main 保持纵向（CSS 默认）：编辑/预览区在上，诊断面板在下方 */}
+        <div className="workbench-main">
           {effectiveLayout === 'split' && <SplitPane left={editorPane} right={previewPane} />}
           {effectiveLayout === 'edit' && editorPane}
           {effectiveLayout === 'preview' && previewPane}

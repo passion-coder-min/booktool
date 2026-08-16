@@ -33,6 +33,8 @@ export interface BookCommands {
   openPdf(): void
   /** 编译完成后在应用内预览 PDF */
   previewPdf(): void
+  /** 在系统文件管理器中打开目录（书籍根 / 单文件所在目录） */
+  openDirectory(): void
   statusBarInfo?: {
     compiling: boolean
     durationMs?: number
@@ -407,6 +409,9 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands }: P
         if (pdfPath) void api.book.openPdf(bookDir!, pdfPath)
       },
       previewPdf: openPdfInApp,
+      openDirectory: () => {
+        if (bookDir) void api.book.openDir(bookDir)
+      },
       get statusBarInfo() {
         const diags = report?.diagnostics ?? []
         return {

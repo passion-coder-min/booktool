@@ -115,6 +115,12 @@ export function registerIpc() {
     return p
   })
 
+  // 在系统文件管理器中打开目录（当前书籍根 / 单个文件所在目录）
+  ipcMain.handle(IPC.bookOpenFolder, (_e, dir: string) => {
+    if (dir) void shell.openPath(dir)
+    return true
+  })
+
   // 打开外部目录（mdBook 兼容书籍），原位置引用
   ipcMain.handle(IPC.bookOpenDirectory, () => chooseExternalBook())
   ipcMain.handle(IPC.bookRemoveExternal, (_e, dir: string) => {

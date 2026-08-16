@@ -121,6 +121,9 @@ function AppInner() {
         case 'new':
           bookCommands?.createNew()
           break
+        case 'open-dir':
+          bookCommands?.openDirectory()
+          break
         case 'toggle-editor-mode':
           bookCommands?.toggleEditorMode()
           break
