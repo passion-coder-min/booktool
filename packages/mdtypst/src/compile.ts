@@ -414,6 +414,11 @@ export class Compiler {
   }
 
   private linkCode(url: string, text: string, node: AnyNode): string {
+    // 空链接目标（如 [x]()）：Typst #link("") 会报错，降级为纯文本
+    if (!url) {
+      this.warn('空链接目标，已转为纯文本', node)
+      return text
+    }
     if (url.startsWith('#')) {
       const label = slugifyHeading(url.slice(1))
       if (!label) {

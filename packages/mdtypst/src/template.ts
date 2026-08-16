@@ -95,8 +95,6 @@ export function renderMainTypst(opts: TemplateOptions): string {
   lang: "zh", region: "cn", size: 10.5pt, cjk-latin-spacing: auto,
 )
 #set par(justify: true, leading: 1em, spacing: 1.15em)
-// 西文与数字缩小至 0.85em（show 规则不影响行高与代码块）
-#show regex("[A-Za-z0-9.,;:!?%()'\\"]+"): it => text(size: 0.85em, it)
 // 中文强调不用斜体（CJK 字体普遍无斜体变体，回退会命中楷体类艺术字）
 #show emph: it => text(weight: 600, it.body)
 

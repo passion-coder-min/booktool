@@ -29,7 +29,7 @@ export interface LoadedBook {
   dir: string
   config: BookConfig
   summary: SummaryItem[]
-  chapters: { path: string; title: string }[]
+  chapters: { path: string; title: string; missing: boolean }[]
 }
 
 /** 任务状态 */

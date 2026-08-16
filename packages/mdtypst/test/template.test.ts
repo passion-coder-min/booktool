@@ -15,8 +15,9 @@ describe('renderMainTypst', () => {
   it('样式直接生成在 main.typ（词法作用域，include 不传播）', () => {
     const out = renderMainTypst({ title: 'T', authors: [], chapters: [] })
     expect(out).toContain('cjk-latin-spacing: auto')
-    expect(out).toContain('#show regex(')
-    expect(out).toContain('0.85em')
+    // 曾用 #show regex("…+") 缩小西文（0.85em），但 Typst 0.15.1 对长 ASCII 串
+    // 报「maximum grouping depth exceeded」（真实书触发）→ 已移除，避免回归
+    expect(out).not.toContain('#show regex(')
     // 中文强调不用斜体（防楷体回退）
     expect(out).toContain('#show emph: it => text(weight: 600')
     // 表格样式与表头加粗

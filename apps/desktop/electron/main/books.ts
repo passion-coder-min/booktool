@@ -34,12 +34,23 @@ export function loadBook(bookDir: string): LoadedBook {
     ? parseSummary(readFileSync(summaryPath, 'utf8'))
     : []
 
-  return { dir: bookDir, config, summary, chapters: flattenChapters(summary) }
+  return { dir: bookDir, config, summary, chapters: flattenChapters(summary).map((c) => ({ ...c, missing: !existsSync(safeJoin(join(bookDir, config.srcDir), c.path)) })) }
 }
 
-/** 读取章节 markdown（path 相对 srcDir；禁止越界） */
+/** 读取章节 markdown（path 相对 srcDir；禁止越界；文件缺失返回 null） */
 export function readChapter(bookDir: string, srcDir: string, chapterPath: string): string {
-  return readFileSync(safeJoin(join(bookDir, srcDir), chapterPath), 'utf8')
+  const abs = safeJoin(join(bookDir, srcDir), chapterPath)
+  if (!existsSync(abs)) throw new Error(`章节文件不存在：${chapterPath}`)
+  return readFileSync(abs, 'utf8')
+}
+
+/** 章节读取（编辑器用）：缺失返回 null 而非抛错，供渲染层展示「缺失」状态 */
+export function readChapterSafe(bookDir: string, srcDir: string, chapterPath: string): string | null {
+  try {
+    return readChapter(bookDir, srcDir, chapterPath)
+  } catch {
+    return null
+  }
 }
 
 export function writeChapter(bookDir: string, srcDir: string, chapterPath: string, content: string): void {
@@ -126,7 +137,8 @@ export function chapterRename(bookDir: string, srcDir: string, chapterPath: stri
     const oldAbs = safeJoin(join(bookDir, srcDir), chapterPath)
     const newAbs = safeJoin(join(bookDir, srcDir), clean)
     if (chapterPath !== clean && existsSync(newAbs)) throw new Error(`目标文件已存在：${clean}`)
-    if (chapterPath !== clean) renameSync(oldAbs, newAbs)
+    // 目录项指向的文件缺失时仅改 SUMMARY 路径，不尝试移动不存在的文件
+    if (chapterPath !== clean && existsSync(oldAbs)) renameSync(oldAbs, newAbs)
     finalPath = clean
   }
   const items = chapterPath !== finalPath

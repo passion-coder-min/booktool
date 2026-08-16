@@ -85,6 +85,8 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
   const [bookName, setBookName] = useState('')
   const [bookDir, setBookDir] = useState<string | null>(null)
   const [current, setCurrent] = useState<string | null>(null)
+  /** 当前章节文件在磁盘上缺失（SUMMARY 有登记但文件不存在） */
+  const [missingPath, setMissingPath] = useState<string | null>(null)
   const [doc, setDoc] = useState('')
   const [saved, setSaved] = useState(true)
 
@@ -103,6 +105,12 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
   const [status, setStatus] = useState('')
   const [report, setReport] = useState<CompileReport | null>(null)
   const [pdfPath, setPdfPath] = useState<string | null>(null)
+
+  /** 目录中磁盘缺失的章节路径集合（树中 ⚠ 标记） */
+  const missingSet = useMemo(
+    () => new Set((book?.chapters ?? []).filter((c) => c.missing).map((c) => c.path)),
+    [book],
+  )
   const [pdfVersion, setPdfVersion] = useState(0)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const pdfBlobUrlRef = useRef<string | null>(null)
@@ -153,9 +161,32 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
     const content = await api.book.readChapter(dir, path)
     if (seq !== loadSeq.current) return
     setCurrent(path)
-    setDoc(content)
+    // 文件缺失：编辑器显示「缺失」状态卡，可重建或从目录移除
+    setMissingPath(content === null ? path : null)
+    setDoc(content ?? '')
     setSaved(true)
   }, [])
+
+  /** 为缺失章节创建文件（用 SUMMARY 标题作默认内容），随后重新打开 */
+  const createMissingChapter = useCallback(async () => {
+    const s = stateRef.current
+    if (!s.bookDir || !s.current) return
+    const title = book?.chapters.find((c) => c.path === s.current)?.title ?? s.current
+    await api.book.writeChapter(s.bookDir, s.current, `# ${title}\n\n`)
+    reloadBook()
+    void openChapter(s.current)
+  }, [book, reloadBook, openChapter])
+
+  /** 从目录（SUMMARY）移除缺失章节条目（不删磁盘文件） */
+  const removeMissingChapter = useCallback(async () => {
+    const s = stateRef.current
+    if (!s.bookDir || !s.current) return
+    if (!confirm(`从目录移除「${s.current}」？（仅移除 SUMMARY 条目，不影响磁盘文件）`)) return
+    await api.book.chapterDelete(s.bookDir, s.current, false)
+    setCurrent(null)
+    setMissingPath(null)
+    reloadBook()
+  }, [reloadBook])
 
   // hash 指定 book-workspace 时自动打开第一章（自动化目检用；须在 openChapter 定义后）
   useEffect(() => {
@@ -516,7 +547,29 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
           )}
         </div>
       </div>
-      {current ? (
+      {current && missingPath === current ? (
+        <EmptyCard
+          icon="⚠️"
+          title="章节文件缺失"
+          desc={
+            <>
+              {current} 在目录（SUMMARY）中登记，但磁盘文件不存在（可能被删除或移动）。
+              <br />
+              可重建该文件继续写作，或从目录中移除此条目。
+            </>
+          }
+          actions={
+            <>
+              <button className="primary" onClick={() => void createMissingChapter()}>
+                + 创建该章节文件
+              </button>
+              <button className="ghost danger-btn" onClick={() => void removeMissingChapter()}>
+                从目录移除
+              </button>
+            </>
+          }
+        />
+      ) : current ? (
         editorMode === 'ir' ? (
           <VditorEditor
             value={doc}
@@ -657,6 +710,7 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
                   onSelect={(p) => void openChapter(p)}
                   onReload={reloadBook}
                   bookDir={bookDir!}
+                  missingSet={missingSet}
                 />
               )}
             </div>
@@ -717,6 +771,7 @@ function DocTree({
   onSelect,
   onReload,
   bookDir,
+  missingSet,
 }: {
   summary: SummaryItem[]
   current: string | null
@@ -724,6 +779,8 @@ function DocTree({
   onSelect: (path: string) => void
   onReload: () => void
   bookDir: string
+  /** 磁盘上缺失的章节路径集合（SUMMARY 有登记但文件不存在） */
+  missingSet: Set<string>
 }) {
   const [busy, setBusy] = useState(false)
   const guard = async (fn: () => Promise<unknown>) => {
@@ -767,7 +824,12 @@ function DocTree({
     return (
       <div key={i}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <div className={`tree-item${current === item.path ? ' active' : ''}`} style={{ flex: 1, minWidth: 0 }} onClick={() => !manage && onSelect(item.path!)}>
+          <div className={`tree-item${current === item.path ? ' active' : ''}${item.path && missingSet.has(item.path) ? ' missing' : ''}`} style={{ flex: 1, minWidth: 0 }} onClick={() => !manage && onSelect(item.path!)}>
+            {item.path && missingSet.has(item.path) && (
+              <span className="tree-missing" title="文件缺失">
+                ⚠
+              </span>
+            )}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
           </div>
           {manage && !busy && (

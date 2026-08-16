@@ -80,6 +80,13 @@ describe('mdast→Typst 内联', () => {
     )
   })
 
+  it('空链接目标降级为纯文本并警告', () => {
+    const out = compileMarkdown('见 [说明]()。')
+    expect(out.typst).not.toContain('#link("")')
+    expect(out.typst).toContain('见 说明。')
+    expect(out.warnings.some((w) => w.message.includes('空链接'))).toBe(true)
+  })
+
   it('内部锚点链接 → label 引用', () => {
     const out = t('# 目标标题\n\n见 [说明](#目标标题)。')
     expect(out).toContain('= 目标标题 <目标标题>')

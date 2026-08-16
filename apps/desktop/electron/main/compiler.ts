@@ -6,7 +6,7 @@ import { join, relative, dirname, basename, extname } from 'node:path'
 import pLimit from 'p-limit'
 import { compileMarkdown, parseMarkdown, renderMainTypst, renderTemplate, collectHeadingLabels, type LineMapping, type MermaidDiagram } from '@booktool/mdtypst'
 import type { CompileReport, Diagnostic } from '@booktool/shared'
-import { loadBook, readChapter, atomicWrite } from './books'
+import { loadBook, readChapter, readChapterSafe, atomicWrite } from './books'
 import { ensureTypst, runTypst, fontsDir as fontsPath } from './typst'
 
 interface ChapterBuild {
@@ -37,11 +37,23 @@ export async function compileBook(
   const diagramLocals = new Map<string, { file: string; line: number }>()
   const builds: ChapterBuild[] = []
   const warnings: Diagnostic[] = []
-  // 远程图片预取（Typst CLI 不支持网络取图）
-  const chapterContents = book.chapters.map((ch) => ({
-    path: ch.path,
-    md: readChapter(bookDir, book.config.srcDir, ch.path),
-  }))
+  // 远程图片预取（Typst CLI 不支持网络取图）；缺失章节跳过并警告，不中止整书
+  const chapterContents: { path: string; md: string }[] = []
+  for (const ch of book.chapters) {
+    const md = readChapterSafe(bookDir, book.config.srcDir, ch.path)
+    if (md === null) {
+      warnings.push({
+        severity: 'warning',
+        message: `章节文件不存在，编译时跳过：${ch.path}`,
+        file: ch.path,
+        line: 0,
+        typFile: '',
+        typLine: 0,
+      })
+      continue
+    }
+    chapterContents.push({ path: ch.path, md })
+  }
   const { map: remoteImages, warnings: remoteWarnings } = await prefetchRemoteImages(
     chapterContents,
     bookDir,

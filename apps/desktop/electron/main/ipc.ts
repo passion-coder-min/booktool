@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync,
 import { IPC, type CompileReport, type LoadedBook, type SearchMatch, type Task, type WorkspaceInfo } from '@booktool/shared'
 import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace, chooseExternalBook, removeExternalBook } from './workspace'
 import {
-  loadBook, readChapter, writeChapter, resolveAsset, atomicWrite,
+  loadBook, readChapter, readChapterSafe, writeChapter, resolveAsset, atomicWrite,
   createBook, renameBook, deleteBook, writeBookToml,
   chapterCreate, chapterRename, chapterDelete, chapterMove,
 } from './books'
@@ -26,7 +26,7 @@ export function registerIpc() {
 
   ipcMain.handle(IPC.bookLoad, (_e, bookDir: string): LoadedBook => loadBook(bookDir))
   ipcMain.handle(IPC.bookReadChapter, (_e, bookDir: string, chapterPath: string) =>
-    readChapter(bookDir, loadBook(bookDir).config.srcDir, chapterPath),
+    readChapterSafe(bookDir, loadBook(bookDir).config.srcDir, chapterPath),
   )
   ipcMain.handle(IPC.bookWriteChapter, (_e, bookDir: string, chapterPath: string, content: string) => {
     writeChapter(bookDir, loadBook(bookDir).config.srcDir, chapterPath, content)
