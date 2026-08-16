@@ -7,7 +7,7 @@ import pLimit from 'p-limit'
 import { compileMarkdown, parseMarkdown, renderMainTypst, renderTemplate, collectHeadingLabels, type LineMapping, type MermaidDiagram } from '@booktool/mdtypst'
 import type { CompileReport, Diagnostic } from '@booktool/shared'
 import { loadBook, readChapter, atomicWrite } from './books'
-import { ensureTypst, runTypst } from './typst'
+import { ensureTypst, runTypst, fontsDir as fontsPath } from './typst'
 
 interface ChapterBuild {
   typFile: string
@@ -149,7 +149,7 @@ export async function compileBook(
   onStatus?.('Typst 编译 PDF …')
   const typstPath = await ensureTypst(onStatus)
   const outRel = outputName === 'book.pdf' ? 'output/book.pdf' : `build/${outputName}`
-  const fontsDir = join(app.getAppPath(), 'resources', 'fonts')
+  const fontsDir = fontsPath()
   const args = ['compile', '--root', bookDir]
   if (existsSync(fontsDir)) args.push('--font-path', fontsDir)
   args.push('build/main.typ', outRel)
@@ -639,7 +639,7 @@ export async function compileSingleFile(
   // 4) Typst 编译
   onStatus?.('Typst 编译 PDF …')
   const typstPath = await ensureTypst(onStatus)
-  const fontsDir = join(app.getAppPath(), 'resources', 'fonts')
+  const fontsDir = fontsPath()
   const args = ['compile', '--root', dir]
   if (existsSync(fontsDir)) args.push('--font-path', fontsDir)
   args.push('.booktool/main.typ', outPdf)

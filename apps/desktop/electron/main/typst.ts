@@ -8,6 +8,20 @@ import { Readable } from 'node:stream'
 export const TYPST_VERSION = '0.15.1'
 const MIN_VERSION = 13
 
+/** 捆绑字体目录：开发时在应用根 resources/fonts，打包后经 extraResources 落到 resourcesPath */
+export function fontsDir(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'fonts')
+    : join(app.getAppPath(), 'resources', 'fonts')
+}
+
+/** 应用图标路径：窗口/任务栏图标，打包后经 extraResources 落到 resourcesPath */
+export function iconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(app.getAppPath(), 'resources', 'icon.png')
+}
+
 let cachedPath: string | null = null
 
 /** 确保 Typst CLI 可用：优先系统 PATH，其次应用数据目录的自动下载版本 */

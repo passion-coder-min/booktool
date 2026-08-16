@@ -173,6 +173,32 @@
 
 验证：真实书端到端编译出 **823 页 A4 PDF**（空块/缺失图/悬空锚点各 1 警告，远程图下载成功无警告）；新增空块/非法图容错集成测试 + path/rehypeImages 单测；全仓 98/98 测试通过。
 
+### 第八阶段：原生 HTML 支持 + 应用图标与打包（08-16，用户反馈驱动）
+
+用户反馈：`<br/>`（换行）未被处理、超链接未正常处理；请求设计图标并打包为可安装。
+
+**原生 HTML**（网络抓取书普遍，如 `android_view.md` 一整张嵌套 HTML 表格）：
+- 新增 `mdtypst/src/html.ts`：HTML 片段 → Typst content。`<br>`→`#linebreak()`、`<wbr>/<hr>`→跳过、
+  `<a href>`→`#link`（仅 http/https/mailto 可点击，相对 href 渲染文本）、`<code>`→行内代码
+  （内层嵌套 `<a>` 时保留链接）、`<b>/<strong>/<i>/<em>`→强调、未知标签剥掉保留文本、实体解码
+- **HTML `<table>` 块** → Typst 表格：tr/td/th 解析 + rowspan/colspan 布局（占用列跟踪），thead 转 `table.header`
+- **CommonMark 拆节点坑**：`<a …>`、`</a>`、中间文本被拆成独立 mdast 节点——给 `content()` 加
+  行内 HTML 开闭标签栈（开标签压栈缓冲、闭标签弹栈封装），而非按单个 html 节点处理
+- 效果：用户书 174 条『不支持原生 HTML』警告清零，br/表格/链接正常，PDF 826 页
+
+**图标与打包**（用户确认：图标 + Linux deb/AppImage）：
+- 设计 `build/icon.svg`（蓝色 `#3d8bfd` 渐变圆角底 + 打开的书 + markdown 文本行），ImageMagick 转
+  512/256 PNG；窗口图标（BrowserWindow icon）
+- 配置 electron-builder（`electron-builder.yml`）：appId/productName/artifactName、
+  `files: out/**`、extraResources 携带字体与图标（**extraResources 的 `to` 相对 `resources/`**，
+  初版写成 `to: resources/fonts` 导致嵌套 `resources/resources/fonts`，修正为 `to: fonts`）
+- 打包路径适配：新增 `fontsDir()`/`iconPath()` helper——开发取 `app.getAppPath()`，打包后取
+  `process.resourcesPath`（extraResources 落位）
+- deb 踩坑：npm 作用域名 `@booktool/desktop` 导致产物路径 `release/@booktool/…` 无法写入 →
+  设 `artifactName` 与 `linux.executableName: booktool`；fpm 要求 homepage 元数据 → package.json 补
+- 产出：`booktool-0.1.0-amd64.deb`（108MB）+ `booktool-0.1.0-x86_64.AppImage`（177MB），
+  应用真实启动无错；deb 含 `/usr/share/applications` 菜单项与 hicolor 图标
+
 ## 验证状态（当前）
 
 | 项 | 结果 |
@@ -187,7 +213,9 @@
 | 脚注三端 | 引用 `[1]` 方括号 + 底部区块分隔线，所见即所得 / HTML 预览一致 |
 | 图片三端 | 所见即所得 / HTML 预览 / 编译 PDF 均加载本地相对路径图（booktool-file 协议） |
 | 整书编译 | 188 章真实书端到端出 PDF（823 页 A4；空块/缺图/锚点降级为警告） |
+| HTML 标签 | br→换行、a→链接、HTML 表格(rowspan) 均渲染；174 条『不支持原生 HTML』警告清零 |
 | PDF 字体 | pdffonts 仅捆绑家族（无艺术字回退） |
+| 打包 | electron-builder Linux deb + AppImage 构建通过，应用可启动；图标/字体随包 |
 
 ## 已知问题与待办
 
@@ -206,7 +234,7 @@
 - [ ] 诊断跳转在 IR 模式会强制切到源码模式（IR 无行定位能力）
 
 ### 功能缺口
-- [ ] 应用打包分发（electron-builder 未配置，Windows/macOS 未测试）
+- [x] 应用打包分发（electron-builder：Linux deb + AppImage，图标/字体随包；Windows/macOS 未测试）
 - [ ] 多版本切换后 UI 章节树未提示版本来源；版本目录不存在时编译报错缺引导
 - [ ] 全文搜索（跨章节/wiki）未实现
 - [ ] SUMMARY 拖拽调序（现为 ↑↓ 按钮）

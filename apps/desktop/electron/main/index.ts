@@ -3,6 +3,7 @@ import { join, extname } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { registerIpc } from './ipc'
 import { setupMenu, setupScreenshotHook } from './menu'
+import { iconPath } from './typst'
 
 /** booktool-file 协议按扩展名返回 Content-Type（图片/PDF 预览） */
 const FILE_MIME: Record<string, string> = {
@@ -23,6 +24,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     title: 'BookTool',
+    icon: iconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
