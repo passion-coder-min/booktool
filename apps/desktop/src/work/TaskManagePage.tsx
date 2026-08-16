@@ -180,16 +180,19 @@ export default function TaskManagePage({ tasks, project, allProjects, onMutated 
   )
 }
 
-function TaskEditModal({
+export function TaskEditModal({
   task,
   defaultProject,
   projects,
+  seedScheduled,
   onClose,
   onSaved,
 }: {
   task: Task | null
   defaultProject: string
   projects: Project[]
+  /** 新建时预填的计划日（日历双击日期格传入）；编辑态忽略 */
+  seedScheduled?: string
   onClose: () => void
   onSaved: () => void
 }) {
@@ -197,7 +200,7 @@ function TaskEditModal({
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? 'todo')
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'normal')
   const [due, setDue] = useState(task?.due ?? '')
-  const [scheduled, setScheduled] = useState(task?.scheduled ?? '')
+  const [scheduled, setScheduled] = useState(task?.scheduled ?? seedScheduled ?? '')
   const [tags, setTags] = useState(task?.tags.join(', ') ?? '')
   const [project, setProject] = useState(task?.project ?? defaultProject)
   const [body, setBody] = useState(task?.body ?? '')
@@ -227,7 +230,18 @@ function TaskEditModal({
           <label>标题</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        {/* 项目（归属容器）与条目本身区分开，避免混淆 */}
+        <div className="form-row">
+          <label>归属项目</label>
+          <select value={project} onChange={(e) => setProject(e.target.value)}>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div className="form-row">
             <label>状态</label>
             <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
@@ -244,16 +258,6 @@ function TaskEditModal({
               {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
                 <option key={p} value={p}>
                   {PRIORITY_LABEL[p]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>项目</label>
-            <select value={project} onChange={(e) => setProject(e.target.value)}>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
                 </option>
               ))}
             </select>

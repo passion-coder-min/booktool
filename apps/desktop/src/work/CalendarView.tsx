@@ -8,6 +8,8 @@ interface Props {
   project: Project
   tasks: Task[]
   onMutated: () => void
+  /** 双击日期格 → 打开新建任务弹窗（参数为 YYYY-MM-DD 计划日） */
+  onAddTask?: (date: string) => void
 }
 
 const DOW = ['一', '二', '三', '四', '五', '六', '日']
@@ -25,7 +27,7 @@ function mondayOf(d: Date): Date {
   return x
 }
 
-export default function CalendarView({ project, tasks, onMutated }: Props) {
+export default function CalendarView({ project, tasks, onMutated, onAddTask }: Props) {
   const [mode, setMode] = useState<'week' | 'month'>('week')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -123,7 +125,13 @@ export default function CalendarView({ project, tasks, onMutated }: Props) {
               </div>
             ))}
             {days.map((d) => (
-              <DayCell key={d.toISOString()} date={fmt(d)} tasks={byDate.get(fmt(d)) ?? []} today={fmt(d) === today} />
+              <DayCell
+                key={d.toISOString()}
+                date={fmt(d)}
+                tasks={byDate.get(fmt(d)) ?? []}
+                today={fmt(d) === today}
+                onAddTask={onAddTask}
+              />
             ))}
           </div>
         </div>
@@ -133,12 +141,27 @@ export default function CalendarView({ project, tasks, onMutated }: Props) {
   )
 }
 
-function DayCell({ date, tasks, today }: { date: string; tasks: Task[]; today: boolean }) {
+function DayCell({
+  date,
+  tasks,
+  today,
+  onAddTask,
+}: {
+  date: string
+  tasks: Task[]
+  today: boolean
+  onAddTask?: (date: string) => void
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${date}` })
   const isOtherMonth = tasks.length === 0 && false // 月视图淡显由 CSS :has 处理简化，跳过
   void isOtherMonth
   return (
-    <div className={`cal-cell${today ? ' today' : ''}${isOver ? ' drag-over' : ''}`} ref={setNodeRef}>
+    <div
+      className={`cal-cell${today ? ' today' : ''}${isOver ? ' drag-over' : ''}`}
+      ref={setNodeRef}
+      onDoubleClick={() => onAddTask?.(date)}
+      title="双击在此日期新建任务"
+    >
       <div className="cal-date">{Number(date.slice(8))}</div>
       {tasks.map((t) => (
         <DraggableCalTask key={t.id} task={t} />

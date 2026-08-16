@@ -3,16 +3,19 @@ import type { WorkspaceInfo, Task } from '@booktool/shared'
 import { api } from '../api'
 import EmptyCard from '../components/EmptyCard'
 import CalendarView from './CalendarView'
+import { TaskEditModal } from './TaskManagePage'
 import type { Project } from '@booktool/shared'
 
 interface Props {
   workspace: WorkspaceInfo | null
 }
 
-/** 日历活动：跨项目任务日历（拖拽改期即时落盘） */
+/** 日历活动：跨项目任务日历（拖拽改期即时落盘；双击日期格新建该日任务） */
 export default function CalendarActivity({ workspace }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projectFilter, setProjectFilter] = useState<string>('all')
+  /** 双击日期格待新建的计划日（YYYY-MM-DD） */
+  const [addingDate, setAddingDate] = useState<string | null>(null)
 
   const refresh = useCallback(() => void api.work.taskList().then(setTasks), [])
   useEffect(refresh, [refresh, workspace])
@@ -67,6 +70,7 @@ export default function CalendarActivity({ workspace }: Props) {
             已完成
           </div>
           <div>拖动卡片到日期格安排计划日，拖回「未安排」取消。</div>
+          <div>双击日期格：在所选项目下新建该日任务（条目）。</div>
         </div>
       </aside>
       <section className="pane">
@@ -76,8 +80,22 @@ export default function CalendarActivity({ workspace }: Props) {
             {projectFilter === 'all' ? '全部项目' : projectMap.get(projectFilter)?.name}
           </span>
         </div>
-        <CalendarView project={virtualProject} tasks={filtered} onMutated={refresh} />
+        <CalendarView project={virtualProject} tasks={filtered} onMutated={refresh} onAddTask={setAddingDate} />
       </section>
+
+      {addingDate && (
+        <TaskEditModal
+          task={null}
+          defaultProject={projectFilter !== 'all' ? projectFilter : (workspace.projects[0]?.id ?? '')}
+          projects={workspace.projects}
+          seedScheduled={addingDate}
+          onClose={() => setAddingDate(null)}
+          onSaved={() => {
+            setAddingDate(null)
+            refresh()
+          }}
+        />
+      )}
     </div>
   )
 }
