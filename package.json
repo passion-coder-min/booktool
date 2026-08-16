@@ -1,0 +1,20 @@
+{
+  "name": "booktool",
+  "private": true,
+  "version": "0.1.0",
+  "description": "本地优先知识出版 + 工作管理工具（Electron + Typst + Mermaid）",
+  "scripts": {
+    "postinstall": "node scripts/sync-assets.mjs",
+    "dev": "pnpm --filter @booktool/desktop dev",
+    "build": "pnpm --filter @booktool/desktop build",
+    "typecheck": "tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/mdtypst/tsconfig.json && tsc --noEmit -p apps/desktop/tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  }
+}
