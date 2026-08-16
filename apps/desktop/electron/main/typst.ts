@@ -6,7 +6,21 @@ import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 
 export const TYPST_VERSION = '0.15.1'
-const MIN_VERSION = 13
+/** 可用 Typst 的最低版本（完整版本号，如 0.13.0 → 1300） */
+const MIN_VERSION = 1300
+
+/** "typst 0.15.1" → 1501（major*10000 + minor*100 + patch，便于大小比较） */
+function parseVersion(out: string): number | null {
+  const m = out.match(/typst\s+(\d+)\.(\d+)(?:\.(\d+))?/i)
+  if (!m) return null
+  return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3] ?? 0)
+}
+
+/** 捆绑版本的完整版本号（与 TYPST_VERSION 对齐） */
+const TYPST_VERSION_NUM = (() => {
+  const [ma, mi, pa] = TYPST_VERSION.split('.').map(Number)
+  return ma * 10000 + mi * 100 + (pa ?? 0)
+})()
 
 /** 捆绑字体目录：开发时在应用根 resources/fonts，打包后经 extraResources 落到 resourcesPath */
 export function fontsDir(): string {
@@ -24,11 +38,51 @@ export function iconPath(): string {
 
 let cachedPath: string | null = null
 
-/** 确保 Typst CLI 可用：优先系统 PATH，其次应用数据目录的自动下载版本 */
+/** 随包捆绑的 Typst 二进制：开发在 resources/typst，打包后经 extraResources 落到 resourcesPath */
+export function typstBundledPath(): string {
+  return join(
+    app.isPackaged ? process.resourcesPath : app.getAppPath(),
+    'resources',
+    'typst',
+    process.platform === 'win32' ? 'typst.exe' : 'typst',
+  )
+}
+
+/**
+ * 确保 Typst CLI 可用。解析顺序（保证离线/跨平台一致 + 支持后续更新）：
+ *   1. 用户目录已更新的版本（version ≥ 捆绑版本 → 更新通道优先）
+ *   2. 随包捆绑版本（离线可用，各平台一致）
+ *   3. 系统 PATH（版本达标）
+ *   4. 自动下载到用户目录
+ */
 export async function ensureTypst(onProgress?: (msg: string) => void): Promise<string> {
   if (cachedPath) return cachedPath
 
-  // 1) 系统 PATH
+  const versionOf = (p: string): number | null => {
+    const r = spawnSync(p, ['--version'], { encoding: 'utf8', timeout: 10_000 })
+    return r.status === 0 ? parseVersion(r.stdout) : null
+  }
+
+  // 1) 用户目录更新版（更新通道：updateTypst 下载的新版本优先于捆绑）
+  const local = localTypstPath()
+  const bundled = typstBundledPath()
+  const localV = existsSync(local) ? versionOf(local) : null
+  const bundledV = existsSync(bundled) ? TYPST_VERSION_NUM : null
+
+  if (localV !== null && (bundledV === null || localV >= bundledV)) {
+    cachedPath = local
+    return local
+  }
+  if (bundledV !== null) {
+    cachedPath = bundled
+    return bundled
+  }
+  if (localV !== null) {
+    cachedPath = local
+    return local
+  }
+
+  // 3) 系统 PATH
   const sys = spawnSync('typst', ['--version'], { encoding: 'utf8', timeout: 5000 })
   if (sys.status === 0) {
     const v = parseVersion(sys.stdout)
@@ -38,17 +92,18 @@ export async function ensureTypst(onProgress?: (msg: string) => void): Promise<s
     }
   }
 
-  // 2) 已下载的本地版本
-  const local = localTypstPath()
-  if (existsSync(local)) {
-    const res = spawnSync(local, ['--version'], { encoding: 'utf8', timeout: 5000 })
-    if (res.status === 0) {
-      cachedPath = local
-      return local
-    }
-  }
+  // 4) 下载（GitHub 直连 -> 国内镜像依次尝试，校验归档完整性）
+  await downloadTypst(local, onProgress)
+  cachedPath = local
+  return local
+}
 
-  // 3) 下载（GitHub 直连 -> 国内镜像依次尝试，校验归档完整性）
+/**
+ * 更新 Typst 引擎：强制下载 TYPST_VERSION 到用户目录（覆盖旧版）。
+ * 更新后 ensureTypst 会优先采用它（更新通道），从而覆盖随包捆绑的旧版本。
+ */
+export async function updateTypst(onProgress?: (msg: string) => void): Promise<string> {
+  const local = localTypstPath()
   await downloadTypst(local, onProgress)
   cachedPath = local
   return local
@@ -58,11 +113,6 @@ function localTypstPath(): string {
   const dir = join(app.getPath('userData'), 'binaries')
   mkdirSync(dir, { recursive: true })
   return join(dir, process.platform === 'win32' ? 'typst.exe' : 'typst')
-}
-
-function parseVersion(out: string): number | null {
-  const m = out.match(/typst\s+(\d+)\./)
-  return m ? Number(m[1]) : null
 }
 
 interface ReleaseAsset {

@@ -215,7 +215,7 @@
 | 整书编译 | 188 章真实书端到端出 PDF（823 页 A4；空块/缺图/锚点降级为警告） |
 | HTML 标签 | br→换行、a→链接、HTML 表格(rowspan) 均渲染；174 条『不支持原生 HTML』警告清零 |
 | PDF 字体 | pdffonts 仅捆绑家族（无艺术字回退） |
-| 打包 | electron-builder Linux deb + AppImage 构建通过，应用可启动；图标/字体随包 |
+| 打包 | electron-builder Linux deb + AppImage 构建通过，应用可启动；图标/字体/Typst 引擎随包，离线自包含 |
 
 ## 已知问题与待办
 
@@ -234,7 +234,8 @@
 - [ ] 诊断跳转在 IR 模式会强制切到源码模式（IR 无行定位能力）
 
 ### 功能缺口
-- [x] 应用打包分发（electron-builder：Linux deb + AppImage，图标/字体随包；Windows/macOS 未测试）
+- [x] 应用打包分发（electron-builder：Linux deb + AppImage，图标/字体/Typst 引擎随包，离线自包含；
+      「帮助→更新 Typst 引擎」下载到用户目录并优先采用——跨平台更新通道；Windows/macOS 未测试）
 - [ ] 多版本切换后 UI 章节树未提示版本来源；版本目录不存在时编译报错缺引导
 - [ ] 全文搜索（跨章节/wiki）未实现
 - [ ] SUMMARY 拖拽调序（现为 ↑↓ 按钮）

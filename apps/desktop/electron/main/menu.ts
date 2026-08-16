@@ -1,4 +1,5 @@
-import { Menu, BrowserWindow, app, shell, type MenuItemConstructorOptions } from 'electron'
+import { Menu, BrowserWindow, app, shell, dialog, type MenuItemConstructorOptions } from 'electron'
+import { updateTypst } from './typst'
 
 /**
  * 应用菜单：格式类命令仅展示快捷键（registerAccelerator: false，不拦截键盘），
@@ -87,6 +88,11 @@ export function setupMenu() {
       submenu: [
         cmd('快捷键一览', 'Ctrl+/', 'help'),
         {
+          label: '更新 Typst 引擎…',
+          click: () => void updateTypstEngine(),
+        },
+        { type: 'separator' },
+        {
           label: '关于 BookTool',
           click: () => void shell.openExternal('https://typst.app'),
         },
@@ -94,6 +100,32 @@ export function setupMenu() {
     },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+/** 更新 Typst 引擎（下载到用户目录，优先于随包捆绑版本；native 对话框反馈） */
+async function updateTypstEngine(): Promise<void> {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const report = async (opts: Electron.MessageBoxOptions) => {
+    if (win && !win.isDestroyed()) await dialog.showMessageBox(win, opts)
+    else await dialog.showMessageBox(opts)
+  }
+  try {
+    await updateTypst((msg) => {
+      if (win && !win.isDestroyed()) win.setTitle(`BookTool — ${msg}`)
+    })
+    if (win && !win.isDestroyed()) win.setTitle('BookTool')
+    await report({
+      type: 'info',
+      title: 'Typst 引擎已更新',
+      message: 'Typst 引擎已更新到用户目录。\n下次编译将使用更新后的版本（优先于随包内置版本）。',
+    })
+  } catch (err) {
+    await report({
+      type: 'error',
+      title: '更新失败',
+      message: '更新 Typst 引擎失败：' + String((err as Error)?.message ?? err),
+    })
+  }
 }
 
 /** 调试辅助：

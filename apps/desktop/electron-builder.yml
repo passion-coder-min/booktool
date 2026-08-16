@@ -8,13 +8,16 @@ files:
   - out/**
   - package.json
 asar: true
-# 运行时子进程/窗口需要真实文件系统路径（Typst 读字体、窗口图标），不进 asar；
+# 运行时子进程/窗口需要真实文件系统路径（Typst 读字体/运行、窗口图标），不进 asar；
 # extraResources 的 to 相对 app 的 resources/ 目录
 extraResources:
   - from: resources/fonts
     to: fonts
   - from: resources/icon.png
     to: icon.png
+  # 随包捆绑 Typst 编译引擎（离线可用；跨平台各自同步对应平台二进制）
+  - from: resources/typst
+    to: typst
 linux:
   executableName: booktool
   target:
