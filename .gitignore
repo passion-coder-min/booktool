@@ -1,0 +1,19 @@
+node_modules/
+dist/
+out/
+.vite/
+*.tsbuildinfo
+.zcode/
+
+# 构建产物与本地工具
+examples/*/build/
+examples/*/output/
+*.pdf
+.tools/
+
+# 可重建静态资产（来源 npm，见 scripts/sync-assets.mjs）
+apps/desktop/src/public/vditor/
+apps/desktop/resources/fonts/
+
+# 运行时临时
+*.tmp-*
