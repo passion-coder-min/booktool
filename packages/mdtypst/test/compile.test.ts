@@ -158,6 +158,12 @@ describe('mdast→Typst 表格与容器', () => {
     expect(out).toContain('[c],')
   })
 
+  it('[TOC] 标记被移除（不渲染字面文本）', () => {
+    const out = t('[TOC]\n\n正文内容')
+    expect(out).not.toContain('TOC')
+    expect(out).toContain('正文内容')
+  })
+
   it('指令容器 → admonition', () => {
     const out = t(':::warning\n注意内容\n:::')
     expect(out).toBe('#admonition("warning")[\n注意内容\n]')

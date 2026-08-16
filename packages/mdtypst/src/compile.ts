@@ -111,6 +111,10 @@ export class Compiler {
   private blockToLines(node: AnyNode): string[] {
     switch (node.type) {
       case 'paragraph': {
+        // `[TOC]` 标记（Typora/mdbook 常见）：不渲染字面文本（站点端替换为章节目录）
+        if (/^\[toc\]$/i.test(plainText(node).trim())) {
+          return []
+        }
         // 段落仅含一张图片 → 带题注的 figure
         if (node.children.length === 1 && node.children[0].type === 'image') {
           return this.figureLines(node.children[0])

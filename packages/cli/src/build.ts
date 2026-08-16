@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, wri
 import { join, dirname, relative, basename, extname, sep } from 'node:path'
 import { createRequire } from 'node:module'
 import { parseSummary, flattenChapters, type SummaryItem } from '@booktool/shared'
-import { renderMarkdown } from './html'
+import { renderMarkdown, type TocHeading } from './html'
 
 const require = createRequire(import.meta.url)
 
@@ -74,6 +74,12 @@ body { margin:0; font-family: -apple-system, "Noto Sans SC", "PingFang SC", "Mic
 .nav-sub { margin-left: 12px; display:flex; flex-direction:column; gap:2px; }
 .nav-sep { border-top:1px dashed var(--border); margin:6px 4px; }
 .content { flex:1; min-width:0; padding: 24px 32px 64px; max-width: 900px; margin: 0 auto; }
+.toc { border: 1px solid var(--border); border-radius: 8px; background: #fafbfc; padding: 10px 14px; margin: 6px 0 20px; }
+.toc-title { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.toc ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.toc a { color: var(--text); text-decoration: none; font-size: 13px; display: block; padding: 2px 6px; border-radius: 4px; }
+.toc a:hover { background: #eef4ff; color: var(--accent); }
+.toc .toc-l1 { padding-left: 14px; }
 .markdown-body { line-height: 1.7; font-size: 15px; }
 .markdown-body img { max-width: 100%; }
 .markdown-body pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow-x: auto; }
@@ -116,6 +122,30 @@ function navHtml(summary: SummaryItem[], current: string, rootPrefix: string): s
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** 生成章节目录（子标题 h2/h3 锚点引导）；无子标题返回空 */
+function tocHtml(headings: TocHeading[]): string {
+  const subs = headings.filter((h) => h.level >= 2 && h.level <= 3)
+  if (subs.length === 0) return ''
+  const items = subs
+    .map((h) => `<li class="toc-l${h.level - 2}"><a href="#${h.id}">${escapeHtml(h.text)}</a></li>`)
+    .join('')
+  return `<nav class="toc"><div class="toc-title">📑 本节目录</div><ul>${items}</ul></nav>`
+}
+
+/** 注入章节目录：有 [TOC] 标记则替换占位，否则自动插到首个 h1 之后 */
+function injectToc(html: string, headings: TocHeading[]): string {
+  const toc = tocHtml(headings)
+  if (!toc) return html
+  if (html.includes('data-toc')) {
+    return html.replace(/<nav[^>]*data-toc[^>]*>\s*<\/nav>/, toc)
+  }
+  const m = html.match(/<h1[^>]*>[\s\S]*?<\/h1>/)
+  if (m && m.index !== undefined) {
+    return html.slice(0, m.index + m[0].length) + toc + html.slice(m.index + m[0].length)
+  }
+  return toc + html
 }
 
 /** 章节 markdown 路径 → 输出 html 相对路径（保持目录结构） */
@@ -170,7 +200,8 @@ export function buildSite(bookDir: string, outDir: string, onStatus?: (msg: stri
     const srcFile = join(srcAbs, ch.path)
     if (!existsSync(srcFile)) continue // 缺失章节跳过
     const md = readFileSync(srcFile, 'utf8')
-    const body = renderMarkdown(md)
+    const { html, headings } = renderMarkdown(md)
+    const body = injectToc(html, headings)
     const rel = pathToHtml(ch.path)
     pages.push({ href: rel, title: ch.title })
     const outFile = join(outDir, rel)
