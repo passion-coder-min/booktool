@@ -9,9 +9,10 @@ interface Props {
 }
 
 /**
- * 底部编译输出 / 诊断面板（默认收起，点工具栏 ⚠ 或状态栏诊断计数展开）。
+ * 底部编译输出 / 诊断面板（编译后自动弹出：有错误/警告展开、干净编译收起；
+ * 也可点工具栏 ⚠ 手动切换）。
  * 点击条目：选中并展开详细错误上下文（typst 原始块 + 源行 + 生成 .typ 片段），同时跳转编辑器。
- * 顶部把手可拖拽调整高度（160~560px，持久化）。
+ * 顶部把手可拖拽调整高度（160~480px，持久化）。
  */
 export default function DiagnosticsPanel({ diagnostics, selected, onSelect, onClose }: Props) {
   const errors = diagnostics.filter((d) => d.severity === 'error').length
@@ -20,7 +21,8 @@ export default function DiagnosticsPanel({ diagnostics, selected, onSelect, onCl
   const [height, setHeight] = useState(() => {
     try {
       const v = Number(localStorage.getItem('booktool-diag-height'))
-      return Number.isFinite(v) && v >= 160 && v <= 560 ? v : 240
+      // 上限收紧到 360（此前 560 占屏过多）；旧持久化超限值回落到 240
+      return Number.isFinite(v) && v >= 160 && v <= 360 ? v : 240
     } catch {
       return 240
     }
@@ -38,7 +40,7 @@ export default function DiagnosticsPanel({ diagnostics, selected, onSelect, onCl
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current) return
       const h = window.innerHeight - e.clientY - 40 // 顶部留出工具栏/状态栏余量
-      setHeight(Math.min(560, Math.max(160, h)))
+      setHeight(Math.min(480, Math.max(160, h)))
     }
     const onUp = () => {
       dragRef.current = false

@@ -189,6 +189,22 @@ describe('mdast→Typst 表格与容器', () => {
     expect(t('| a | b |\n|---|---|\n| 1 | 2 |')).not.toContain('\u{200b}')
   })
 
+  it('表格单元格短单词也有兜底断点（宽表极限压缩不重叠）', () => {
+    // 无任何自然边界的短词获得兜底断点，列再窄也能折行
+    const out = t('| col |\n|---|\n| number |')
+    expect(out).toContain('numbe\u{200b}r')
+    // 时间戳在冒号后可断
+    const ts = t('| time |\n|---|\n| 11:23:45.123 |')
+    expect(ts).toContain('11:\u{200b}23:\u{200b}45')
+    // 驼峰词优先自然断点：onCreate → on|Create…（段内另有兜底断点，
+    // 仅在列宽 <5 字符时启用；去除 ZWSP 后文本原样）
+    const camel = t('| api |\n|---|\n| onCreate() |')
+    expect(camel).toContain('on\u{200b}Creat')
+    expect(camel.replace(/\u200b/g, '')).toContain('[onCreate()]')
+    // ≤4 字符原子与正文不受影响
+    expect(t('| col |\n|---|\n| ro |')).not.toContain('\u{200b}')
+  })
+
   it('表格行列数不齐时规范化（缺格补空、多格截断）', () => {
     const out = t('| a | b | c |\n|---|---|---|\n| 1 | 2 |\n| 4 | 5 | 6 | 7 |')
     // 表体每行恰好 3 个单元格（4 空格缩进的表头不计）：缺格补 []、多格截断
@@ -324,7 +340,8 @@ describe('转义与降级', () => {
     expect(out).toContain('table.header(')
     // #table 内是代码模式，table.cell 调用不带 #
     expect(out).toContain('table.cell(rowspan: 2, [创建])')
-    expect(out).toContain('#link("https://d.android.com/ref")[onCreate()]')
+    // 链接文本在表格单元格内获得驼峰断行机会（on|Create），去除 ZWSP 后原样
+    expect(out.replace(/\u200b/g, '')).toContain('#link("https://d.android.com/ref")[onCreate()]')
     // rowspan 使第二行第 1 列被占用：不出现独立的 [创建] 普通单元格
     expect(out).not.toContain('\n  [创建],')
   })

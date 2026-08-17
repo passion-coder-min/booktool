@@ -58,12 +58,24 @@ function atomWidths(s: string, code: boolean): number[] {
   return out
 }
 
-/** 为长原子插入零宽断行机会 U+200B（只影响可断性，不改可见文本）。 */
-export function insertBreakOps(s: string): string {
+/** 表格单元格断行激进预设：>4 字符的原子都有断行机会（自然断点优先，
+ *  无边界串每 5 字符兜底），保证宽表列被极限压缩时任何 token 都能折行
+ *  而不溢出重叠（CSS break-word 语义）。ZWSP 是条件断点，列宽足够时
+ *  文本保持原样，无视觉影响。 */
+export const TABLE_CELL_BREAK = { minAtom: 4, maxRun: 5 } as const
+
+/** 为长原子插入零宽断行机会 U+200B（只影响可断性，不改可见文本）。
+ *  opts.minAtom：参与处理的原子最短长度（默认 14）；opts.maxRun：无自然
+ *  断点时兜底插入的间隔（默认 12）。
+ *  兜底带前瞻：前方 3 字符内即将出现自然断点（驼峰/分隔符）时让位，
+ *  只对毫无边界的连续串（如 number、随机 id）才强制切断。 */
+export function insertBreakOps(s: string, opts?: { minAtom?: number; maxRun?: number }): string {
+  const minAtom = opts?.minAtom ?? 14
+  const maxRun = opts?.maxRun ?? 12
   return s
     .split(/(\s+)/)
     .map((atom) => {
-      if (!atom || /^\s+$/.test(atom) || atom.length <= 14) return atom
+      if (!atom || /^\s+$/.test(atom) || atom.length <= minAtom) return atom
       let out = ''
       let run = 0
       for (let i = 0; i < atom.length; i++) {
@@ -72,9 +84,13 @@ export function insertBreakOps(s: string): string {
         run++
         const next = atom[i + 1] ?? ''
         if (!next) break
-        const afterSep = '_-/.)'.includes(ch) && /[A-Za-z0-9\u4e00-\u9fff]/.test(next)
+        const afterSep = '_-/.):,'.includes(ch) && /[A-Za-z0-9\u4e00-\u9fff]/.test(next)
         const camel = /[a-z0-9]/.test(ch) && /[A-Z]/.test(next)
-        if (afterSep || camel || run >= 12) {
+        // 前方 3 字符内是否有即将到来的自然断点（驼峰或分隔符后随文字）
+        const upcoming = atom.slice(i + 1, i + 4)
+        const boundarySoon =
+          /[A-Z]/.test(upcoming) || /[_\-/.):,][A-Za-z0-9\u4e00-\u9fff]/.test(upcoming)
+        if (afterSep || camel || (run >= maxRun && !boundarySoon)) {
           out += ZWSP
           run = 0
         }

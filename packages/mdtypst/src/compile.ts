@@ -4,7 +4,7 @@ import { slugifyHeading, uniqueSlug } from './slug'
 import { latexToTypst } from './math'
 import { parseMarkdown } from './parse'
 import { htmlFragmentToTypst, htmlTableToTypst, parseHtmlTag, wrapHtmlContent } from './html'
-import { weightedColumnSpec, insertBreakOps, wideTableFontSize, type CellTextSeg } from './table-layout'
+import { weightedColumnSpec, insertBreakOps, wideTableFontSize, TABLE_CELL_BREAK, type CellTextSeg } from './table-layout'
 
 export interface CompileOptions {
   /** md 中图片相对路径 → Typst 可见路径（编译管线注入） */
@@ -401,7 +401,7 @@ export class Compiler {
   private inline(node: AnyNode): string {
     switch (node.type) {
       case 'text':
-        return escapeTypstText(this.inTableCell ? insertBreakOps(node.value) : node.value)
+        return escapeTypstText(this.inTableCell ? insertBreakOps(node.value, TABLE_CELL_BREAK) : node.value)
       case 'emphasis':
         return `#emph[${this.content(node.children)}]`
       case 'strong':
@@ -409,7 +409,7 @@ export class Compiler {
       case 'delete':
         return `#strike[${this.content(node.children)}]`
       case 'inlineCode':
-        return `#raw(${typstString(this.inTableCell ? insertBreakOps(node.value) : node.value)}, block: false)`
+        return `#raw(${typstString(this.inTableCell ? insertBreakOps(node.value, TABLE_CELL_BREAK) : node.value)}, block: false)`
       case 'break':
         return '#linebreak()'
       case 'inlineMath': {

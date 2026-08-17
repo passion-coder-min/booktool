@@ -209,6 +209,17 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
       setReport(r)
       setPdfPath(r.pdfPath)
       setPdfVersion((v) => v + 1)
+      // 编译完成自动同步诊断面板：有错误/警告 → 底部弹出并选中首条错误，
+      // 方便逐条点击跳转；干净编译 → 自动收起，释放编辑/预览空间
+      const ds = r.diagnostics ?? []
+      if (ds.length > 0) {
+        setDiagOpen(true)
+        const firstErr = ds.findIndex((d) => d.severity === 'error')
+        setDiagIndex(firstErr >= 0 ? firstErr : 0)
+      } else {
+        setDiagOpen(false)
+        setDiagIndex(-1)
+      }
       setStatus(
         r.ok
           ? outputName

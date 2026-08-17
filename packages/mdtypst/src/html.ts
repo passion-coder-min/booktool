@@ -1,5 +1,5 @@
 import { escapeTypstText, typstString } from './escape'
-import { weightedColumnSpec, insertBreakOps, wideTableFontSize, type CellTextSeg } from './table-layout'
+import { weightedColumnSpec, insertBreakOps, wideTableFontSize, TABLE_CELL_BREAK, type CellTextSeg } from './table-layout'
 
 /**
  * 原生 HTML 处理（网络抓取的书常见）：把 HTML 片段转成 Typst content。
@@ -193,7 +193,7 @@ function htmlPlainText(html: string): string {
 function breakableHtml(html: string): string {
   return html
     .split(/(<[^>]*>)/)
-    .map((part) => (part.startsWith('<') ? part : insertBreakOps(part)))
+    .map((part) => (part.startsWith('<') ? part : insertBreakOps(part, TABLE_CELL_BREAK)))
     .join('')
 }
 
