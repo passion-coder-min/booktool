@@ -17,12 +17,6 @@ function parseVersion(out: string): number | null {
   return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3] ?? 0)
 }
 
-/** 捆绑版本的完整版本号（与 TYPST_VERSION 对齐） */
-const TYPST_VERSION_NUM = (() => {
-  const [ma, mi, pa] = TYPST_VERSION.split('.').map(Number)
-  return ma * 10000 + mi * 100 + (pa ?? 0)
-})()
-
 /** 捆绑字体目录：开发时在应用根 resources/fonts，打包后经 extraResources 落到 resourcesPath */
 export function fontsDir(): string {
   return app.isPackaged
@@ -68,7 +62,9 @@ export async function ensureTypst(onProgress?: (msg: string) => void): Promise<s
   const local = localTypstPath()
   const bundled = typstBundledPath()
   const localV = existsSync(local) ? versionOf(local) : null
-  const bundledV = existsSync(bundled) ? TYPST_VERSION_NUM : null
+  // 捆绑二进制同样实跑 --version 验证（而非仅凭文件存在即信任 TYPST_VERSION）：
+  // 打包机下载损坏/平台架构不符时，这里拿到 null → 走 PATH/下载兜底，预览可自愈
+  const bundledV = existsSync(bundled) ? versionOf(bundled) : null
 
   if (localV !== null && (bundledV === null || localV >= bundledV)) {
     cachedPath = local

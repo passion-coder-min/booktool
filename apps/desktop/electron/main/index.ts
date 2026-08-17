@@ -18,6 +18,9 @@ const FILE_MIME: Record<string, string> = {
 }
 
 function createWindow() {
+  // ESM 产物无 __dirname 全局（此前依赖 electron-vite 在存在 external 依赖时注入的
+  // CJS interop banner 提供，全量 bundle 后 banner 消失导致 ReferenceError），
+  // 显式使用 import.meta.dirname（Electron 33 / Node 20.11+ 支持）。
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -26,7 +29,7 @@ function createWindow() {
     title: 'BookTool',
     icon: iconPath(),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
@@ -37,7 +40,7 @@ function createWindow() {
   } else {
     // 调试：BOOKTOOL_UI_STATE 指定初始界面（如 book-workspace / work / calendar / stats）
     const uiState = process.env.BOOKTOOL_UI_STATE
-    void win.loadFile(join(__dirname, '../renderer/index.html'), uiState ? { hash: uiState } : undefined)
+    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'), uiState ? { hash: uiState } : undefined)
   }
   return win
 }

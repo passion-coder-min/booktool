@@ -7,6 +7,9 @@ directories:
 files:
   - out/**
   - package.json
+  # main/preload 已全量 bundle（含 remark/unified/p-limit/smol-toml/yaml/zod），
+  # 无需在 asar 携带 node_modules（原 218MB → ~36MB，显著加快启动）
+  - '!node_modules/**'
 asar: true
 # 运行时子进程/窗口需要真实文件系统路径（Typst 读字体/运行、窗口图标），不进 asar；
 # extraResources 的 to 相对 app 的 resources/ 目录
