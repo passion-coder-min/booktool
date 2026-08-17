@@ -172,6 +172,26 @@ describe('mdast→Typst 表格与容器', () => {
     }
   })
 
+  it('含不可断长 token 的列宽兜底（方法名/常量列不被裁断）', () => {
+    // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）
+    const out = t(
+      '| 方法 | 说明 | 默认值 |\n' +
+      '|---|---|---|\n' +
+      '| getPollInterval() | 获取轮询间隔时间 | 30分钟 |\n' +
+      '| getGlobalAlertBytes(long def) | 获取全局流量警告字节数 | DEFAULT_PERFORM_POLL_DELAY_MS |',
+    )
+    const m = out.match(/columns: \(([\d.]+)fr, ([\d.]+)fr, ([\d.]+)fr\),/)
+    expect(m).not.toBeNull()
+    if (m) {
+      const [w1, w2, w3] = [Number(m[1]), Number(m[2]), Number(m[3])]
+      // 常量列最长原子 29 字符 → 权重最大；方法名列原子 24 字符 → 次之；
+      // 中文说明列逐字可断 → 压缩换行占最窄
+      expect(w3).toBeGreaterThan(w1)
+      expect(w3).toBeGreaterThan(w2)
+      expect(w1).toBeGreaterThan(w2)
+    }
+  })
+
   it('[TOC] 标记被移除（不渲染字面文本）', () => {
     const out = t('[TOC]\n\n正文内容')
     expect(out).not.toContain('TOC')

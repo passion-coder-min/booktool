@@ -303,14 +303,52 @@ export class Compiler {
 
   /** 加权列宽：每列权重 = max(内容长度)^0.75，输出 "2.1fr, 8.5fr, …" */
   private columnSpec(node: AnyNode, cols: number): string {
-    const lens: number[] = Array.from({ length: cols }, (): number => 0)
+    const CJK = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/
+    /** 字符串渲染宽度（单位：拉丁字符=1，中文/全角=2；行内代码等宽字体 ×1.2） */
+    const units = (s: string, code: boolean): number => {
+      let u = 0
+      for (const ch of s) u += CJK.test(ch) ? 2 : 1
+      return u * (code ? 1.2 : 1)
+    }
+    /** 把一段文本切成"不可再断行的原子"宽度列表：
+     *  空格是天然断点；每个汉字独立成原子（中文可逐字断行）；
+     *  其余连续拉丁/数字/符号串（代码标识符）为一个原子，不可断。 */
+    const atomWidths = (s: string, code: boolean): number[] => {
+      const out: number[] = []
+      for (const w of s.split(/\s+/)) {
+        if (!w) continue
+        let run = ''
+        for (const ch of w) {
+          if (CJK.test(ch)) {
+            if (run) {
+              out.push(units(run, code))
+              run = ''
+            }
+            out.push(2 * (code ? 1.2 : 1))
+          } else {
+            run += ch
+          }
+        }
+        if (run) out.push(units(run, code))
+      }
+      return out
+    }
+    const desired: number[] = Array.from({ length: cols }, (): number => 0)
+    const minNeed: number[] = Array.from({ length: cols }, (): number => 0)
     for (const row of node.children ?? []) {
       const cells: AnyNode[] = row.children ?? []
       for (let i = 0; i < cols; i++) {
-        lens[i] = Math.max(lens[i], this.textLen(cells[i] ?? { children: [] }))
+        const segs = this.cellTextSegments(cells[i] ?? { children: [] })
+        desired[i] = Math.max(desired[i], segs.reduce((sum, s) => sum + units(s.text, s.code), 0))
+        for (const seg of segs) {
+          for (const a of atomWidths(seg.text, seg.code)) minNeed[i] = Math.max(minNeed[i], a)
+        }
       }
     }
-    const weights = lens.map((l) => Math.pow(Math.max(l, 1), 0.75))
+    // 权重 = max(期望宽度^0.75, 最长原子宽度)：期望值主导比例分配，
+    // 原子宽度兜底保证列宽装得下不可断的长 token（如 DEFAULT_PERFORM_POLL_DELAY_MS），
+    // 否则该 token 溢出单元格被裁掉（"第一列显示不完全"）。
+    const weights = desired.map((d, i) => Math.max(Math.pow(Math.max(d, 1), 0.75), minNeed[i], 1))
     const total = weights.reduce<number>((a, b) => a + b, 0)
     // 每列至少 6% 页宽，避免短列（如序号列）被压到不可读
     const minRatio = 0.06 * total
@@ -321,13 +359,13 @@ export class Compiler {
     return specs.join(', ')
   }
 
-  /** 节点纯文本长度（递归，text/html 取 value，其余走 children） */
-  private textLen(node: AnyNode): number {
-    if (!node) return 0
-    if (node.type === 'text' || node.type === 'html' || node.type === 'code') {
-      return String(node.value ?? '').length
+  /** 提取单元格的纯文本片段（递归）：text/html/code 取 value，标注是否行内代码 */
+  private cellTextSegments(node: AnyNode): { text: string; code: boolean }[] {
+    if (!node) return []
+    if (node.type === 'text' || node.type === 'html' || node.type === 'inlineCode') {
+      return [{ text: String(node.value ?? ''), code: node.type === 'inlineCode' }]
     }
-    return (node.children ?? []).reduce((sum: number, c: AnyNode) => sum + this.textLen(c), 0)
+    return (node.children ?? []).flatMap((c: AnyNode) => this.cellTextSegments(c))
   }
 
   private cell(cell: AnyNode): string {
