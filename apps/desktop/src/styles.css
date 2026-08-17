@@ -50,6 +50,10 @@ body {
 
 /* ---------- 应用骨架 ---------- */
 .app { display: flex; height: 100%; overflow: hidden; }
+/* 中间列：工作区(flex:1)在上、状态栏(footer)在底部全宽。原 StatusBar 是 .app
+   的 flex row 直接子级，被排到最右侧成窄深色块（"右侧小黑"）。 */
+.app-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.app-main .statusbar { width: 100%; }
 
 /* 活动栏（最左图标竖栏） */
 .activity-bar {
@@ -71,7 +75,7 @@ body {
 .activity-spacer { flex: 1; }
 
 /* 主区（侧栏+编辑+预览） */
-.main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 
 /* 顶栏 */
 .topbar {

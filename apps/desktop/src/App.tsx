@@ -182,34 +182,36 @@ function AppInner() {
   return (
     <div className="app">
       <ActivityBar active={activity} onSelect={setActivity} />
-      <div className="main-area">
-        {empty && activity === 'book' && (
-          <div className="empty-hint">
-            <p>当前工作区为空。创建一个示例书籍与示例项目开始体验？</p>
-            <button onClick={() => void api.workspace.initDemo().then(() => location.reload())}>
-              初始化示例内容
-            </button>
-          </div>
-        )}
-        {activity === 'book' && (
-          <BookMode
-            workspace={workspace}
-            onChanged={refresh}
-            onRegisterCommands={setBookCommands}
-            onRegisterBookOpen={registerBookOpen}
-          />
-        )}
-        {activity === 'work' && <WorkActivity workspace={workspace} onChanged={refresh} />}
-        {activity === 'calendar' && <CalendarActivity workspace={workspace} />}
-        {activity === 'stats' && <StatsActivity workspace={workspace} />}
-        {activity === 'settings' && <SettingsPage workspace={workspace} onChanged={refresh} />}
+      <div className="app-main">
+        <div className="main-area">
+          {empty && activity === 'book' && (
+            <div className="empty-hint">
+              <p>当前工作区为空。创建一个示例书籍与示例项目开始体验？</p>
+              <button onClick={() => void api.workspace.initDemo().then(() => location.reload())}>
+                初始化示例内容
+              </button>
+            </div>
+          )}
+          {activity === 'book' && (
+            <BookMode
+              workspace={workspace}
+              onChanged={refresh}
+              onRegisterCommands={setBookCommands}
+              onRegisterBookOpen={registerBookOpen}
+            />
+          )}
+          {activity === 'work' && <WorkActivity workspace={workspace} onChanged={refresh} />}
+          {activity === 'calendar' && <CalendarActivity workspace={workspace} />}
+          {activity === 'stats' && <StatsActivity workspace={workspace} />}
+          {activity === 'settings' && <SettingsPage workspace={workspace} onChanged={refresh} />}
+        </div>
+        <StatusBar
+          compileInfo={bookCommands?.statusBarInfo}
+          onOpenDiagnostics={() => bookCommands?.openDiagnostics()}
+          onOpenPdf={() => bookCommands?.openPdf()}
+          onPreviewPdf={() => bookCommands?.previewPdf()}
+        />
       </div>
-      <StatusBar
-        compileInfo={bookCommands?.statusBarInfo}
-        onOpenDiagnostics={() => bookCommands?.openDiagnostics()}
-        onOpenPdf={() => bookCommands?.openPdf()}
-        onPreviewPdf={() => bookCommands?.previewPdf()}
-      />
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </div>
   )
