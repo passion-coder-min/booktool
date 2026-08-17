@@ -34,23 +34,43 @@ function units(s: string, code: boolean): number {
   return u * (code ? 1.2 : 1)
 }
 
-/** 把一段文本切成"不可再断行的原子"宽度列表：
- *  空格是天然断点；每个汉字独立成原子（中文可逐字断行）；
- *  其余连续拉丁/数字/符号串（代码标识符）为一个原子，不可断。 */
+/** 把一段文本切成"不可再断行的原子"宽度列表。
+ *  与 insertBreakOps 的断点规则保持一致（关键！）：空格、下划线/连字符/
+ *  斜杠/点/冒号/逗号/右括号之后、驼峰边界、每 maxRun 字符兜底，都是
+ *  断点。若此处只按空格分（把 persist.logd.logpersistd.rotate_kbytes
+ *  当成 38 字符原子），min-content 会被撑爆 → 该列霸占整行、其它列被
+ *  压到比内容还窄而溢出重叠（"number ro" 即此）。 */
 function atomWidths(s: string, code: boolean): number[] {
   const out: number[] = []
+  const MIN_ATOM = 4
+  const MAX_RUN = 5
   for (const w of s.split(/\s+/)) {
     if (!w) continue
     let run = ''
-    for (const ch of w) {
+    let runLen = 0
+    for (let i = 0; i < w.length; i++) {
+      const ch = w[i]!
+      const next = w[i + 1] ?? ''
       if (CJK.test(ch)) {
-        if (run) {
-          out.push(units(run, code))
-          run = ''
-        }
+        if (run) out.push(units(run, code))
         out.push(2 * (code ? 1.2 : 1))
-      } else {
-        run += ch
+        run = ''
+        runLen = 0
+        continue
+      }
+      run += ch
+      runLen++
+      const afterSep = '_-/.):,'.includes(ch) && /[A-Za-z0-9\u4e00-\u9fff]/.test(next)
+      const camel = /[a-z0-9]/.test(ch) && /[A-Z]/.test(next)
+      const upcoming = w.slice(i + 1, i + 4)
+      const boundarySoon =
+        /[A-Z]/.test(upcoming) || /[_\-/.):,][A-Za-z0-9\u4e00-\u9fff]/.test(upcoming)
+      const shouldBreak = afterSep || camel || (runLen >= MAX_RUN && !boundarySoon)
+      // 短段（<=MIN_ATOM）且即将到自然断点 → 并入下一段，避免碎片化
+      if (shouldBreak && !(runLen <= MIN_ATOM && (afterSep || camel))) {
+        out.push(units(run, code))
+        run = ''
+        runLen = 0
       }
     }
     if (run) out.push(units(run, code))
@@ -62,7 +82,7 @@ function atomWidths(s: string, code: boolean): number[] {
  *  无边界串每 5 字符兜底），保证宽表列被极限压缩时任何 token 都能折行
  *  而不溢出重叠（CSS break-word 语义）。ZWSP 是条件断点，列宽足够时
  *  文本保持原样，无视觉影响。 */
-export const TABLE_CELL_BREAK = { minAtom: 4, maxRun: 5 } as const
+export const TABLE_CELL_BREAK = { minAtom: 4, maxRun: 4 } as const
 
 /** 为长原子插入零宽断行机会 U+200B（只影响可断性，不改可见文本）。
  *  opts.minAtom：参与处理的原子最短长度（默认 14）；opts.maxRun：无自然
@@ -113,9 +133,12 @@ export function weightedColumnSpec(cellsPerCol: CellTextSeg[][], colCount: numbe
       }
     }
   })
-  const weights = desired.map((d, i) => Math.max(Math.pow(Math.max(d, 1), 0.75), minNeed[i], 1))
+  // min-content（不可断原子）是硬性下限，权重放大 1.3 让短列也获得足够宽度，
+  // 避免长内容列（^0.75 压缩后仍偏大）把短列压到比内容还窄而溢出重叠
+  const weights = desired.map((d, i) => Math.max(Math.pow(Math.max(d, 1), 0.75), minNeed[i] * 1.3, 1))
   const total = weights.reduce<number>((a, b) => a + b, 0)
-  const minRatio = 0.06 * total
+  // 每列至少 10% 页宽（原 6% 过低，API 文档 4 列表的 type/default 短列易被压没）
+  const minRatio = 0.1 * total
   return weights.map((w) => `${(Math.max(w, minRatio) / total).toFixed(3)}fr`).join(', ')
 }
 

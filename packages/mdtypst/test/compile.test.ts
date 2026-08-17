@@ -175,7 +175,7 @@ describe('mdast→Typst 表格与容器', () => {
   it('表格内长 token 插入零宽断行机会（防溢出重叠）', () => {
     const out = t('| 方法 | 默认值 |\n|---|---|\n| getGlobalAlertBytes(long def) | DEFAULT_PERFORM_POLL_DELAY_MS |')
     // 驼峰边界插入 ZWSP（getGlobalAlertBytes 无需转义的字符）
-    expect(out).toContain('get\u{200b}Global\u{200b}Alert\u{200b}Bytes')
+    expect(out).toContain('get\u{200b}Global\u{200b}Alert')
     // 下划线边界插入（DEFAULT_PERFORM_POLL_DELAY_MS 有 4 个 _ 边界）
     expect((out.match(/\u200b/g) ?? []).length).toBeGreaterThanOrEqual(4)
     // 可见文本不变：去掉 ZWSP 与转义反斜杠后内容原样
@@ -192,14 +192,14 @@ describe('mdast→Typst 表格与容器', () => {
   it('表格单元格短单词也有兜底断点（宽表极限压缩不重叠）', () => {
     // 无任何自然边界的短词获得兜底断点，列再窄也能折行
     const out = t('| col |\n|---|\n| number |')
-    expect(out).toContain('numbe\u{200b}r')
+    expect(out).toContain('numb\u{200b}er')
     // 时间戳在冒号后可断
     const ts = t('| time |\n|---|\n| 11:23:45.123 |')
     expect(ts).toContain('11:\u{200b}23:\u{200b}45')
     // 驼峰词优先自然断点：onCreate → on|Create…（段内另有兜底断点，
     // 仅在列宽 <5 字符时启用；去除 ZWSP 后文本原样）
     const camel = t('| api |\n|---|\n| onCreate() |')
-    expect(camel).toContain('on\u{200b}Creat')
+    expect(camel).toContain('on\u{200b}Crea')
     expect(camel.replace(/\u200b/g, '')).toContain('[onCreate()]')
     // ≤4 字符原子与正文不受影响
     expect(t('| col |\n|---|\n| ro |')).not.toContain('\u{200b}')
@@ -220,6 +220,31 @@ describe('mdast→Typst 表格与容器', () => {
     expect(wide.trimEnd().endsWith(']')).toBe(true)
     const narrow = t('| a | b |\n|---|---|\n| 1 | 2 |')
     expect(narrow).not.toContain('#set text(size:')
+  })
+
+  it('真实 log 表：超长点分键不再霸占、类型列不被压没（回归）', () => {
+    // 复现 Android log.md 的 4 列表：第一列点分长键 + 短 type 列 + 短 default 列 + 长描述
+    const out = t(
+      '| name | type | default | description |\n' +
+      '|------|------|---------|-------------|\n' +
+      '| ro.logd.kernel | bool+ | svelte+ | Enable klogd daemon |\n' +
+      '| ro.debuggable | number | | if not "1", logd default false |\n' +
+      '| persist.logd.logpersistd.rotate_kbytes | | 1024 | output file size in KB |',
+    )
+    const m = out.match(/columns: \(([\d.]+)fr, ([\d.]+)fr, ([\d.]+)fr, ([\d.]+)fr\),/)
+    expect(m).not.toBeNull()
+    if (m) {
+      const ws = [1, 2, 3, 4].map((i) => Number(m[i]))
+      const total = ws.reduce((a, b) => a + b, 0)
+      // 每列占比 8%~45%：无列霸占（修复前点分键列吞掉整行）、无列被压没
+      for (const w of ws) {
+        const pct = (w / total) * 100
+        expect(pct).toBeGreaterThan(8)
+        expect(pct).toBeLessThan(45)
+      }
+    }
+    // 点分键按 . 切分获得断点（修复前被当 38 字符原子）
+    expect(out.replace(/[\u200b\\]/g, '')).toContain('persist.logd.logpersistd.rotate_kbytes')
   })
 
   it('HTML 表格与 GFM 表格共用列宽/断行算法（Android 文档场景）', () => {
@@ -262,8 +287,12 @@ describe('mdast→Typst 表格与容器', () => {
     expect(idle42).toBe(idleText - 1)
   })
 
-  it('含不可断长 token 的列宽兜底（方法名/常量列不被裁断）', () => {
-    // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）
+  it('含不可断长 token 的列宽兜底（各列都有合理宽度，不被压没）', () => {
+    // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）。
+    // 修复前：DEFAULT_PERFORM_POLL_DELAY_MS 被当 29 字符不可断原子，
+    // 常量列霸占整行，其它列被压到比内容还窄而溢出（number/ro 重叠）。
+    // 修复后：原子按 _ . 驼峰切分（与 ZWSP 断点一致），min-content 合理，
+    // 各列宽度均衡，任何一列都不低于 min-content。
     const out = t(
       '| 方法 | 说明 | 默认值 |\n' +
       '|---|---|---|\n' +
@@ -274,11 +303,13 @@ describe('mdast→Typst 表格与容器', () => {
     expect(m).not.toBeNull()
     if (m) {
       const [w1, w2, w3] = [Number(m[1]), Number(m[2]), Number(m[3])]
-      // 常量列最长原子 29 字符 → 权重最大；方法名列原子 24 字符 → 次之；
-      // 中文说明列逐字可断 → 压缩换行占最窄
-      expect(w3).toBeGreaterThan(w1)
-      expect(w3).toBeGreaterThan(w2)
-      expect(w1).toBeGreaterThan(w2)
+      const total = w1 + w2 + w3
+      // 每列宽度占比都在 20%~50%（无列被压没、无列霸占）
+      for (const w of [w1, w2, w3]) {
+        const pct = (w / total) * 100
+        expect(pct).toBeGreaterThan(20)
+        expect(pct).toBeLessThan(50)
+      }
     }
   })
 
