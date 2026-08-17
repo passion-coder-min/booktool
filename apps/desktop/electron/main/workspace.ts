@@ -106,10 +106,11 @@ export function scanWorkspace(): WorkspaceInfo {
       const meta = readProjectMeta(dir, d.name)
       const wikiDir = join(dir, 'wiki')
       const wikiFiles = listMd(wikiDir)
+      const reportFiles = listMd(join(dir, 'reports'))
       const taskCount = existsSync(join(dir, 'tasks'))
         ? readdirSync(join(dir, 'tasks')).filter((f) => f.endsWith('.md')).length
         : 0
-      projects.push({ ...meta, dir, wikiFiles, taskCount })
+      projects.push({ ...meta, dir, wikiFiles, reportFiles, taskCount })
     }
   }
   return { root, books, externalBooks, hiddenBooks, projects }

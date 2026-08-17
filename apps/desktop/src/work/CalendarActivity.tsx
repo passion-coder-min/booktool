@@ -4,21 +4,23 @@ import { api } from '../api'
 import EmptyCard from '../components/EmptyCard'
 import CalendarView from './CalendarView'
 import { TaskEditModal } from './TaskManagePage'
-import TaskDetailModal from './TaskDetailModal'
+import TaskHoverCard from './TaskHoverCard'
 import type { Project } from '@booktool/shared'
 
 interface Props {
   workspace: WorkspaceInfo | null
 }
 
-/** 日历活动：跨项目任务日历（拖拽改期即时落盘；双击日期格新建；点击卡片查看详情/进度/依赖） */
+/** 日历活动：跨项目任务日历（拖拽改期即时落盘；双击日期格新建；悬停查看详情；双击卡片编辑） */
 export default function CalendarActivity({ workspace }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [projectFilter, setProjectFilter] = useState<string>('all')
   /** 双击日期格待新建的计划日（YYYY-MM-DD） */
   const [addingDate, setAddingDate] = useState<string | null>(null)
-  /** 点击任务卡片打开的详情任务 */
-  const [detailTask, setDetailTask] = useState<Task | null>(null)
+  /** 悬停任务卡片 → 详情浮层（含鼠标坐标） */
+  const [hover, setHover] = useState<{ task: Task; x: number; y: number } | null>(null)
+  /** 双击任务卡片 → 编辑弹窗 */
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const refresh = useCallback(() => void api.work.taskList().then(setTasks), [])
   useEffect(refresh, [refresh, workspace])
@@ -33,7 +35,7 @@ export default function CalendarActivity({ workspace }: Props) {
 
   // CalendarView 需要 project 对象用于 taskUpdate；用虚拟 all-project 兜底
   const virtualProject: Project = useMemo(
-    () => ({ id: '', name: '全部', color: '#3d8bfd', description: '', dir: '', wikiFiles: [], taskCount: 0 }),
+    () => ({ id: '', name: '全部', color: '#3d8bfd', description: '', dir: '', wikiFiles: [], reportFiles: [], taskCount: 0 }),
     [],
   )
 
@@ -73,7 +75,7 @@ export default function CalendarActivity({ workspace }: Props) {
             已完成
           </div>
           <div>拖动卡片到日期格安排计划日，拖回「未安排」取消。</div>
-          <div>双击日期格：在所选项目下新建该日任务（条目）。</div>
+          <div>双击日期格：新建该日任务；双击任务卡片：编辑；悬停：查看详情。</div>
         </div>
       </aside>
       <section className="pane">
@@ -88,24 +90,13 @@ export default function CalendarActivity({ workspace }: Props) {
           tasks={filtered}
           onMutated={refresh}
           onAddTask={setAddingDate}
-          onTaskClick={setDetailTask}
+          onTaskEdit={setEditingTask}
+          onTaskHover={(task, x, y) => setHover({ task, x, y })}
+          onTaskLeave={() => setHover(null)}
         />
       </section>
 
-      {detailTask && (
-        <TaskDetailModal
-          task={detailTask}
-          tasks={filtered}
-          projects={workspace.projects}
-          onClose={() => setDetailTask(null)}
-          onSaved={async () => {
-            // 刷新列表并把详情任务同步为最新数据（依赖增删/状态变更即时反映）
-            const list = await api.work.taskList()
-            setTasks(list)
-            setDetailTask((cur) => (cur ? (list.find((t) => t.id === cur.id) ?? null) : null))
-          }}
-        />
-      )}
+      {hover && <TaskHoverCard hover={hover} tasks={filtered} projects={workspace.projects} />}
 
       {addingDate && (
         <TaskEditModal
@@ -116,6 +107,19 @@ export default function CalendarActivity({ workspace }: Props) {
           onClose={() => setAddingDate(null)}
           onSaved={() => {
             setAddingDate(null)
+            refresh()
+          }}
+        />
+      )}
+
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          defaultProject={editingTask.project}
+          projects={workspace.projects}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => {
+            setEditingTask(null)
             refresh()
           }}
         />

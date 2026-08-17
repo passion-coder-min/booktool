@@ -10,6 +10,7 @@ import {
 } from './books'
 import { compileBook, pdfPathOf, compileSingleFile } from './compiler'
 import { listTasks, createTask, updateTask, deleteTask, type TaskInput } from './tasks'
+import { ensureWeek, addToday, readReport, writeReport } from './reports'
 import { readConfig, writeConfig } from './config'
 
 export function registerIpc() {
@@ -316,6 +317,21 @@ export function registerIpc() {
     atomicWrite(abs, content)
     return true
   })
+
+  // 工作日报：每周一个 md 文件（周一日期+ISO 周号），进入日报视图时自动建当前周文件
+  ipcMain.handle(IPC.reportEnsureWeek, (_e, project: string) => {
+    return ensureWeek(join(getWorkspaceRoot(), 'projects'), project)
+  })
+  ipcMain.handle(IPC.reportAddToday, (_e, project: string) => {
+    return addToday(join(getWorkspaceRoot(), 'projects'), project)
+  })
+  ipcMain.handle(IPC.reportRead, (_e, project: string, file: string) => {
+    return readReport(join(getWorkspaceRoot(), 'projects'), project, file)
+  })
+  ipcMain.handle(IPC.reportWrite, (_e, project: string, file: string, content: string) => {
+    return writeReport(join(getWorkspaceRoot(), 'projects'), project, file, content)
+  })
+
   ipcMain.handle(IPC.taskList, (): Task[] => {
     const root = getWorkspaceRoot()
     return listTasks(join(root, 'projects'))

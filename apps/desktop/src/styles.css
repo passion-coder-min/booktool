@@ -400,6 +400,11 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .wiki-file { padding: 3px 8px 3px 24px; font-size: 12.5px; color: var(--text); cursor: pointer; border-radius: 5px; }
 .wiki-file:hover { background: var(--panel-2); }
 .wiki-file.active { background: var(--accent-weak); color: var(--accent); }
+/* Wiki 树：文件夹展开箭头 */
+.wiki-caret {
+  width: 14px; flex-shrink: 0; text-align: center; font-size: 10px; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .view-tabs {
   display: inline-flex; align-items: center; gap: 2px;
   padding: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: 7px;
@@ -450,6 +455,14 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .cal-task.done { text-decoration: line-through; color: var(--muted); border-left-color: var(--ok); }
 .cal-task.overdue { border-left-color: var(--danger); }
 .cal-task.blocked { border-left-color: #d94a4a; background: var(--danger-weak, #fdf0f0); }
+/* 日历任务悬停详情浮层：fixed 跟随鼠标、不拦截事件（避免干扰拖拽） */
+.task-hover-card {
+  position: fixed; z-index: 200; width: 280px; max-height: 330px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); padding: 10px 12px; pointer-events: none;
+  font-size: 12.5px; color: var(--text);
+}
+.badge.blocked { background: #d94a4a; }
 .unscheduled { width: 220px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 10px; overflow-y: auto; }
 .unscheduled.drag-over { background: var(--accent-weak); }
 

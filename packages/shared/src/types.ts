@@ -75,6 +75,8 @@ export interface AppConfig {
 export interface Project extends ProjectMeta {
   dir: string
   wikiFiles: string[]
+  /** 工作日报文件（reports/ 下，每周一个，按周一日期+ISO 周号命名） */
+  reportFiles: string[]
   taskCount: number
 }
 

@@ -10,8 +10,12 @@ interface Props {
   onMutated: () => void
   /** 双击日期格 → 打开新建任务弹窗（参数为 YYYY-MM-DD 计划日） */
   onAddTask?: (date: string) => void
-  /** 点击已存在任务卡片 → 打开详情弹窗 */
-  onTaskClick?: (task: Task) => void
+  /** 双击已存在任务卡片 → 打开编辑弹窗 */
+  onTaskEdit?: (task: Task) => void
+  /** 悬停任务卡片 → 显示详情浮层（参数为鼠标坐标） */
+  onTaskHover?: (task: Task, x: number, y: number) => void
+  /** 离开任务卡片 → 隐藏详情浮层 */
+  onTaskLeave?: () => void
 }
 
 const DOW = ['一', '二', '三', '四', '五', '六', '日']
@@ -29,7 +33,7 @@ function mondayOf(d: Date): Date {
   return x
 }
 
-export default function CalendarView({ project, tasks, onMutated, onAddTask, onTaskClick }: Props) {
+export default function CalendarView({ project, tasks, onMutated, onAddTask, onTaskEdit, onTaskHover, onTaskLeave }: Props) {
   const [mode, setMode] = useState<'week' | 'month'>('week')
   const [anchor, setAnchor] = useState(() => new Date())
 
@@ -144,12 +148,14 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask, onT
                 today={fmt(d) === today}
                 blockedIds={blockedIds}
                 onAddTask={onAddTask}
-                onTaskClick={onTaskClick}
+                onTaskEdit={onTaskEdit}
+                onTaskHover={onTaskHover}
+                onTaskLeave={onTaskLeave}
               />
             ))}
           </div>
         </div>
-        <Unscheduled tasks={unscheduled} blockedIds={blockedIds} onTaskClick={onTaskClick} />
+        <Unscheduled tasks={unscheduled} blockedIds={blockedIds} onTaskEdit={onTaskEdit} onTaskHover={onTaskHover} onTaskLeave={onTaskLeave} />
       </DndContext>
     </div>
   )
@@ -161,14 +167,18 @@ function DayCell({
   today,
   blockedIds,
   onAddTask,
-  onTaskClick,
+  onTaskEdit,
+  onTaskHover,
+  onTaskLeave,
 }: {
   date: string
   tasks: Task[]
   today: boolean
   blockedIds: Set<string>
   onAddTask?: (date: string) => void
-  onTaskClick?: (task: Task) => void
+  onTaskEdit?: (task: Task) => void
+  onTaskHover?: (task: Task, x: number, y: number) => void
+  onTaskLeave?: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `day:${date}` })
   const isOtherMonth = tasks.length === 0 && false // 月视图淡显由 CSS :has 处理简化，跳过
@@ -182,7 +192,7 @@ function DayCell({
     >
       <div className="cal-date">{Number(date.slice(8))}</div>
       {tasks.map((t) => (
-        <DraggableCalTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onClick={onTaskClick} />
+        <DraggableCalTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
       ))}
     </div>
   )
@@ -191,11 +201,15 @@ function DayCell({
 function DraggableCalTask({
   task,
   blocked,
-  onClick,
+  onEdit,
+  onHover,
+  onLeave,
 }: {
   task: Task
   blocked: boolean
-  onClick?: (task: Task) => void
+  onEdit?: (task: Task) => void
+  onHover?: (task: Task, x: number, y: number) => void
+  onLeave?: () => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id })
   const overdue =
@@ -208,7 +222,13 @@ function DraggableCalTask({
       className={`cal-task${task.status === 'done' ? ' done' : ''}${overdue ? ' overdue' : ''}${blocked ? ' blocked' : ''}`}
       title={`${task.title}${task.due ? `\n截止 ${task.due}` : ''}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
       style={isDragging ? { opacity: 0.5 } : undefined}
-      onClick={() => onClick?.(task)}
+      onMouseEnter={(e) => onHover?.(task, e.clientX, e.clientY)}
+      onMouseLeave={onLeave}
+      onDoubleClick={(e) => {
+        // 阻止冒泡到日期格的「双击新建任务」
+        e.stopPropagation()
+        onEdit?.(task)
+      }}
     >
       {task.title}
       {blocked && <span style={{ marginLeft: 4 }}>⛔</span>}
@@ -219,11 +239,15 @@ function DraggableCalTask({
 function Unscheduled({
   tasks,
   blockedIds,
-  onTaskClick,
+  onTaskEdit,
+  onTaskHover,
+  onTaskLeave,
 }: {
   tasks: Task[]
   blockedIds: Set<string>
-  onTaskClick?: (task: Task) => void
+  onTaskEdit?: (task: Task) => void
+  onTaskHover?: (task: Task, x: number, y: number) => void
+  onTaskLeave?: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'unscheduled' })
   return (
@@ -233,11 +257,11 @@ function Unscheduled({
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {tasks.map((t) => (
-          <CompactTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onClick={onTaskClick} />
+          <CompactTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
         ))}
       </div>
       <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-        拖动任务到日期格安排计划日；拖回此处取消安排。点击任务卡片查看详情。
+        拖动任务到日期格安排计划日；拖回此处取消安排。悬停卡片查看详情，双击编辑。
       </p>
     </div>
   )
@@ -246,11 +270,15 @@ function Unscheduled({
 function CompactTask({
   task,
   blocked,
-  onClick,
+  onEdit,
+  onHover,
+  onLeave,
 }: {
   task: Task
   blocked: boolean
-  onClick?: (task: Task) => void
+  onEdit?: (task: Task) => void
+  onHover?: (task: Task, x: number, y: number) => void
+  onLeave?: () => void
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: task.id })
   return (
@@ -261,7 +289,12 @@ function CompactTask({
       className={`cal-task${task.status === 'done' ? ' done' : ''}${blocked ? ' blocked' : ''}`}
       style={{ whiteSpace: 'normal' }}
       title={`${task.title}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
-      onClick={() => onClick?.(task)}
+      onMouseEnter={(e) => onHover?.(task, e.clientX, e.clientY)}
+      onMouseLeave={onLeave}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        onEdit?.(task)
+      }}
     >
       {task.title}
       {blocked && <span style={{ marginLeft: 4 }}>⛔</span>}

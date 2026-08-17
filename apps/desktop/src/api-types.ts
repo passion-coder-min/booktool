@@ -61,6 +61,10 @@ export interface Api {
     wikiDelete: (project: string, file: string) => Promise<import('@booktool/shared').WorkspaceInfo>
     wikiRead: (project: string, file: string) => Promise<{ dir: string; content: string }>
     wikiWrite: (project: string, file: string, content: string) => Promise<boolean>
+    reportEnsureWeek: (project: string) => Promise<{ file: string; created: boolean }>
+    reportRead: (project: string, file: string) => Promise<{ dir: string; content: string }>
+    reportWrite: (project: string, file: string, content: string) => Promise<boolean>
+    reportAddToday: (project: string) => Promise<{ file: string; content: string }>
     taskList: () => Promise<import('@booktool/shared').Task[]>
     taskCreate: (input: unknown) => Promise<import('@booktool/shared').Task>
     taskUpdate: (
