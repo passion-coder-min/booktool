@@ -189,6 +189,42 @@ describe('mdast→Typst 表格与容器', () => {
     expect(t('| a | b |\n|---|---|\n| 1 | 2 |')).not.toContain('\u{200b}')
   })
 
+  it('表格行列数不齐时规范化（缺格补空、多格截断）', () => {
+    const out = t('| a | b | c |\n|---|---|---|\n| 1 | 2 |\n| 4 | 5 | 6 | 7 |')
+    // 表体每行恰好 3 个单元格（4 空格缩进的表头不计）：缺格补 []、多格截断
+    const cells = out.split('\n').filter((l) => /^ {2}\[/.test(l))
+    expect(cells.length).toBe(6)
+    expect(out).toContain('[],')
+    expect(out).not.toContain('[7]')
+  })
+
+  it('宽表（5+列）自动缩小字号、窄表不缩', () => {
+    const wide = t('| a | b | c | d | e |\n|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 |')
+    expect(wide).toContain('#block[#set text(size: 0.85em)')
+    expect(wide.trimEnd().endsWith(']')).toBe(true)
+    const narrow = t('| a | b |\n|---|---|\n| 1 | 2 |')
+    expect(narrow).not.toContain('#set text(size:')
+  })
+
+  it('HTML 表格与 GFM 表格共用列宽/断行算法（Android 文档场景）', () => {
+    const html = [
+      '<table>',
+      '<tr><th>方法</th><th>说明</th><th>默认值</th></tr>',
+      '<tr><td><code>getPollInterval()</code></td><td>获取网络统计数据的轮询间隔时间（毫秒）</td><td>30分钟</td></tr>',
+      '<tr><td><code>getGlobalAlertBytes(long def)</code></td><td>获取全局网络流量警告的字节数</td><td><code>DEFAULT_PERFORM_POLL_DELAY_MS</code></td></tr>',
+      '</table>',
+    ].join('')
+    const out = t(html)
+    // 加权 fr 列宽（不再是旧的 auto + 1fr；align 的 auto 是对齐默认值，无关）
+    expect(out).toMatch(/columns: \([\d.]+fr, [\d.]+fr, [\d.]+fr\),/)
+    expect(out).not.toMatch(/columns: \([^)]*auto/)
+    // 单元格文本插入 ZWSP（HTML 文本节点内，标签不受影响）
+    expect((out.match(/\u200b/g) ?? []).length).toBeGreaterThanOrEqual(4)
+    const plain = out.replace(/[\u200b\\]/g, '')
+    expect(plain).toContain('DEFAULT_PERFORM_POLL_DELAY_MS')
+    expect(plain).toContain('getGlobalAlertBytes(long def)')
+  })
+
   it('含不可断长 token 的列宽兜底（方法名/常量列不被裁断）', () => {
     // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）
     const out = t(

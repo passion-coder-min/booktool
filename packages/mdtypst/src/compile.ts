@@ -4,6 +4,7 @@ import { slugifyHeading, uniqueSlug } from './slug'
 import { latexToTypst } from './math'
 import { parseMarkdown } from './parse'
 import { htmlFragmentToTypst, htmlTableToTypst, parseHtmlTag, wrapHtmlContent } from './html'
+import { weightedColumnSpec, insertBreakOps, wideTableFontSize, type CellTextSeg } from './table-layout'
 
 export interface CompileOptions {
   /** md 中图片相对路径 → Typst 可见路径（编译管线注入） */
@@ -279,12 +280,18 @@ export class Compiler {
       .join(', ')
     const rows: AnyNode[] = node.children
     const [head, ...body] = rows
-    const headerCells: string[] = head.children.map((cell: AnyNode) => `  ${this.cell(cell)}`)
-    // 列宽按内容长度加权：每列取全表该列最长纯文本长度为权重（0.75 次幂压缩，
-    // 避免超长列吃光整页），以 Nfr 显式分配——内容最长的列分到最宽，
-    // 且所有列按比例铺满页宽（长文本在列内自然换行，不撑出页面）。
+    // 行规范化：GFM 允许各行单元格数与表头不一致；Typst 按行优先填充，
+    // 缺单元格会左移串行、多单元格会溢出到下一视觉行（错位/重叠观感）。补空截多。
+    const norm = (row: AnyNode): AnyNode[] => {
+      const cells: AnyNode[] = row.children ?? []
+      return Array.from({ length: cols }, (_, i) => cells[i] ?? { children: [] })
+    }
+    const headerCells: string[] = norm(head).map((cell: AnyNode) => `  ${this.cell(cell)}`)
+    // 列宽/断行算法见 table-layout.ts（min/max 加权 + ZWSP 条件断行）
     const colSpec = this.columnSpec(node, cols)
+    const wideSize = wideTableFontSize(cols)
     const out = [
+      ...(wideSize ? [`#block[#set text(size: ${wideSize})`] : []),
       '#table(',
       `  columns: (${colSpec}),`,
       `  align: (${aligns}),`,
@@ -293,70 +300,27 @@ export class Compiler {
       '  ),',
     ]
     for (const row of body) {
-      for (const cell of row.children) {
+      for (const cell of norm(row)) {
         out.push(`  ${this.cell(cell)},`)
       }
     }
     out.push(')')
+    if (wideSize) out.push(']')
     return out
   }
 
-  /** 加权列宽：每列权重 = max(内容长度)^0.75，输出 "2.1fr, 8.5fr, …" */
+  /** 加权列宽（算法与 HTML 表格共享，见 table-layout.ts） */
   private columnSpec(node: AnyNode, cols: number): string {
-    const CJK = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/
-    /** 字符串渲染宽度（单位：拉丁字符=1，中文/全角=2；行内代码等宽字体 ×1.2） */
-    const units = (s: string, code: boolean): number => {
-      let u = 0
-      for (const ch of s) u += CJK.test(ch) ? 2 : 1
-      return u * (code ? 1.2 : 1)
-    }
-    /** 把一段文本切成"不可再断行的原子"宽度列表：
-     *  空格是天然断点；每个汉字独立成原子（中文可逐字断行）；
-     *  其余连续拉丁/数字/符号串（代码标识符）为一个原子，不可断。 */
-    const atomWidths = (s: string, code: boolean): number[] => {
-      const out: number[] = []
-      for (const w of s.split(/\s+/)) {
-        if (!w) continue
-        let run = ''
-        for (const ch of w) {
-          if (CJK.test(ch)) {
-            if (run) {
-              out.push(units(run, code))
-              run = ''
-            }
-            out.push(2 * (code ? 1.2 : 1))
-          } else {
-            run += ch
-          }
-        }
-        if (run) out.push(units(run, code))
-      }
-      return out
-    }
-    const desired: number[] = Array.from({ length: cols }, (): number => 0)
-    const minNeed: number[] = Array.from({ length: cols }, (): number => 0)
+    const cellsPerCol: CellTextSeg[][] = Array.from({ length: cols }, () => [])
     for (const row of node.children ?? []) {
       const cells: AnyNode[] = row.children ?? []
       for (let i = 0; i < cols; i++) {
-        const segs = this.cellTextSegments(cells[i] ?? { children: [] })
-        desired[i] = Math.max(desired[i], segs.reduce((sum, s) => sum + units(s.text, s.code), 0))
-        for (const seg of segs) {
-          for (const a of atomWidths(seg.text, seg.code)) minNeed[i] = Math.max(minNeed[i], a)
+        for (const seg of this.cellTextSegments(cells[i] ?? { children: [] })) {
+          cellsPerCol[i]!.push({ text: seg.text, code: seg.code })
         }
       }
     }
-    // 权重 = max(期望宽度^0.75, 最长原子宽度)：期望值主导比例分配，
-    // 原子宽度兜底保证列宽装得下不可断的长 token（如 DEFAULT_PERFORM_POLL_DELAY_MS），
-    // 否则该 token 溢出单元格被裁掉（"第一列显示不完全"）。
-    const weights = desired.map((d, i) => Math.max(Math.pow(Math.max(d, 1), 0.75), minNeed[i], 1))
-    const total = weights.reduce<number>((a, b) => a + b, 0)
-    // 每列至少 6% 页宽，避免短列（如序号列）被压到不可读
-    const minRatio = 0.06 * total
-    const specs = weights.map((w) => {
-      const v = Math.max(w, minRatio)
-      return `${(v / total).toFixed(3)}fr`
-    })
-    return specs.join(', ')
+    return weightedColumnSpec(cellsPerCol, cols)
   }
 
   /** 提取单元格的纯文本片段（递归）：text/html/code 取 value，标注是否行内代码 */
@@ -383,34 +347,6 @@ export class Compiler {
 
   /** 表格单元格作用域标志：inline() 的 text/inlineCode 分支据此插入 ZWSP */
   private inTableCell = false
-
-  /** 为长原子（无空格的连续串）插入零宽断行机会 U+200B：
-   *  断点选在 "_" "-" "/" "." ")" 之后与小写→大写的驼峰边界，
-   *  连续 12 字符无自然断点时兜底补一个。只影响可断性，不改可见文本。 */
-  private breakableText(s: string): string {
-    return s
-      .split(/(\s+)/)
-      .map((atom) => {
-        if (!atom || /^\s+$/.test(atom) || atom.length <= 14) return atom
-        let out = ''
-        let run = 0
-        for (let i = 0; i < atom.length; i++) {
-          const ch = atom[i]!
-          out += ch
-          run++
-          const next = atom[i + 1] ?? ''
-          if (!next) break
-          const afterSep = '_-/.)'.includes(ch) && /[A-Za-z0-9\u4e00-\u9fff]/.test(next)
-          const camel = /[a-z0-9]/.test(ch) && /[A-Z]/.test(next)
-          if (afterSep || camel || run >= 12) {
-            out += '\u{200b}'
-            run = 0
-          }
-        }
-        return out
-      })
-      .join('')
-  }
 
   // ---------------- 内联（content 模式） ----------------
 
@@ -465,7 +401,7 @@ export class Compiler {
   private inline(node: AnyNode): string {
     switch (node.type) {
       case 'text':
-        return escapeTypstText(this.inTableCell ? this.breakableText(node.value) : node.value)
+        return escapeTypstText(this.inTableCell ? insertBreakOps(node.value) : node.value)
       case 'emphasis':
         return `#emph[${this.content(node.children)}]`
       case 'strong':
@@ -473,7 +409,7 @@ export class Compiler {
       case 'delete':
         return `#strike[${this.content(node.children)}]`
       case 'inlineCode':
-        return `#raw(${typstString(this.inTableCell ? this.breakableText(node.value) : node.value)}, block: false)`
+        return `#raw(${typstString(this.inTableCell ? insertBreakOps(node.value) : node.value)}, block: false)`
       case 'break':
         return '#linebreak()'
       case 'inlineMath': {

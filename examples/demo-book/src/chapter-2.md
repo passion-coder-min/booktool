@@ -31,6 +31,38 @@ $$\begin{aligned} \nabla \cdot \mathbf{E} &= \rho / \epsilon_0 \\ \nabla \times 
 | Mermaid 图表 | 插件 | 内建 |
 | 数学公式 | MathJax | Typst 原生 |
 
+## API 长标识符表格（断行与列宽回归）
+
+| 方法 | 说明 | 值 |
+|---|---|---|
+| `getPollInterval()` | 获取网络统计数据的轮询间隔时间（毫秒） | 30分钟 |
+| `getPollDelay()` | 获取执行轮询的延迟时间（毫秒） | `DEFAULT_PERFORM_POLL_DELAY_MS` |
+| `getGlobalAlertBytes(long def)` | 获取全局网络流量警告的字节数，若未设置则返回默认值 | 传入的默认值 def |
+| `getSampleEnabled()` | 获取是否启用采样功能, 主要用于上层跟踪 | true |
+
+含不可断长 token（代码标识符/常量）的表格：列宽按 min-content 兜底分配，
+超宽时在零宽断行点（下划线/驼峰边界）折行，不溢出单元格、不与相邻列重叠。
+
+## logcat 行格式（7 列宽表缩字号）
+
+| 日期 | 时间 | PID | TID | 级别 | 标签 | 消息 |
+|---|---|---|---|---|---|---|
+| 08-17 | 11:23:45.123 | 12345 | 678 | V | ActivityManager | Schedule background network policy check for uid=10123 |
+| 08-17 | 11:23:46.001 | 12345 | 678 | D | NetworkPolicy | isLoggable POLICY_REJECT_METERED_BACKGROUND uid=10123 |
+| 08-17 | 11:24:02.345 | 12346 | 980 | W | TrafficStats | getGlobalAlertBytes DEFAULT_PERFORM_POLL_DELAY_MS exceeded |
+
+## 网络策略 API（HTML 表格，Android 文档抓取形态）
+
+<table>
+<tr><th>方法</th><th>说明</th><th>默认值</th></tr>
+<tr><td><code>getPollInterval()</code></td><td>获取网络统计数据的轮询间隔时间（毫秒）</td><td>30分钟</td></tr>
+<tr><td><code>getPollDelay()</code></td><td>获取执行轮询的延迟时间（毫秒）</td><td><code>DEFAULT_PERFORM_POLL_DELAY_MS</code></td></tr>
+<tr><td><code>getGlobalAlertBytes(long def)</code></td><td>获取全局网络流量警告的字节数，若未设置则返回默认值</td><td>传入的默认值 def</td></tr>
+<tr><td><code>getSampleEnabled()</code></td><td>获取是否启用采样功能, 主要用于上层跟踪</td><td>true</td></tr>
+</table>
+
+HTML 表格与 GFM 表格共用同一套列宽（min/max 加权）与 ZWSP 断行算法。
+
 ## 删除线与任务
 
 ~~旧方案已废弃~~。本周计划：

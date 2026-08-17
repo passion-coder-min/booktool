@@ -1,4 +1,5 @@
 import { escapeTypstText, typstString } from './escape'
+import { weightedColumnSpec, insertBreakOps, wideTableFontSize, type CellTextSeg } from './table-layout'
 
 /**
  * 原生 HTML 处理（网络抓取的书常见）：把 HTML 片段转成 Typst content。
@@ -139,9 +140,19 @@ export function htmlTableToTypst(html: string): string[] {
   })
   if (colCount === 0) return []
 
-  // 前几列 auto，末列 1fr 吸收剩余宽度并换行，避免长文本撑出页面
-  const colSpec = colCount <= 1 ? '1fr' : [...Array.from({ length: colCount - 1 }, () => 'auto'), '1fr'].join(', ')
+  // 列宽：与 GFM 表格共享 min/max 加权算法（table-layout.ts）。
+  // 原策略（前几列 auto + 末列 1fr）在 Typst 协商 auto 列时，含不可断长
+  // token（代码标识符/常量，Android 文档 API 表常见）的列可能被压窄，
+  // token 溢出单元格与相邻列重叠。跨列（colspan>1）单元格多为表头，不参与。
+  const cellsPerCol: CellTextSeg[][] = Array.from({ length: colCount }, () => [])
+  for (const { col, cell } of layout) {
+    if (cell.colspan > 1) continue
+    cellsPerCol[col]?.push({ text: htmlPlainText(cell.text) })
+  }
+  const colSpec = weightedColumnSpec(cellsPerCol, colCount)
+  const wideSize = wideTableFontSize(colCount)
   const out = [
+    ...(wideSize ? [`#block[#set text(size: ${wideSize})`] : []),
     '#table(',
     `  columns: (${colSpec}),`,
     `  align: (${Array.from({ length: colCount }, () => 'auto').join(', ')}),`,
@@ -160,11 +171,34 @@ export function htmlTableToTypst(html: string): string[] {
     for (const cell of rows[r]) out.push(`  ${spanCell(cell)},`)
   }
   out.push(')')
+  if (wideSize) out.push(']')
   return out
 }
 
+/** 单元格 HTML 的纯文本（量宽用）：剥标签 + 解码常见实体 + 压缩空白 */
+function htmlPlainText(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 单元格文本节点插入 ZWSP 断行机会（只处理标签之间的文本，不动标签/属性） */
+function breakableHtml(html: string): string {
+  return html
+    .split(/(<[^>]*>)/)
+    .map((part) => (part.startsWith('<') ? part : insertBreakOps(part)))
+    .join('')
+}
+
 function spanCell(cell: HtmlTableCell): string {
-  const content = htmlFragmentToTypst(cell.text)
+  const content = htmlFragmentToTypst(breakableHtml(cell.text))
   if (cell.rowspan > 1 || cell.colspan > 1) {
     const params = [`rowspan: ${cell.rowspan}`]
     if (cell.colspan > 1) params.push(`colspan: ${cell.colspan}`)
