@@ -117,5 +117,7 @@ export interface WorkspaceInfo {
   books: string[]
   /** 外部打开的书籍（mdBook 兼容目录，原位置引用） */
   externalBooks: { name: string; dir: string }[]
+  /** 已从管理列表移除（仅隐藏，目录保留在 books/ 下）的内置书籍名 */
+  hiddenBooks: string[]
   projects: Project[]
 }

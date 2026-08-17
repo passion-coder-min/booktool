@@ -2,7 +2,7 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { join, dirname, extname, basename, relative } from 'node:path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, copyFileSync } from 'node:fs'
 import { IPC, type CompileReport, type LoadedBook, type SearchMatch, type Task, type WorkspaceInfo } from '@booktool/shared'
-import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace, chooseExternalBook, removeExternalBook } from './workspace'
+import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace, chooseExternalBook, removeExternalBook, hideBook, unhideBook } from './workspace'
 import {
   loadBook, readChapter, readChapterSafe, writeChapter, resolveAsset, atomicWrite,
   createBook, renameBook, deleteBook, writeBookToml,
@@ -56,6 +56,8 @@ export function registerIpc() {
     deleteBook(join(getWorkspaceRoot(), 'books'), name)
     return scanWorkspace()
   })
+  ipcMain.handle(IPC.bookHide, (_e, name: string) => hideBook(name))
+  ipcMain.handle(IPC.bookUnhide, (_e, name: string) => unhideBook(name))
   ipcMain.handle(IPC.bookWriteToml, (_e, bookDir: string, title: string, authors: string[], versions, active: string | null) => {
     writeBookToml(bookDir, title, authors, versions, active)
     return true

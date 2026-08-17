@@ -16,6 +16,8 @@ export interface Api {
     create: (name: string, title: string, authors: string[]) => Promise<import('@booktool/shared').WorkspaceInfo>
     rename: (oldName: string, newName: string) => Promise<import('@booktool/shared').WorkspaceInfo>
     remove: (name: string) => Promise<import('@booktool/shared').WorkspaceInfo>
+    hide: (name: string) => Promise<import('@booktool/shared').WorkspaceInfo>
+    unhide: (name: string) => Promise<import('@booktool/shared').WorkspaceInfo>
     writeToml: (
       dir: string,
       title: string,

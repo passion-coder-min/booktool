@@ -280,14 +280,15 @@ export class Compiler {
     const rows: AnyNode[] = node.children
     const [head, ...body] = rows
     const headerCells: string[] = head.children.map((cell: AnyNode) => `  ${this.cell(cell)}`)
-    // 前几列 auto 按内容自适应，末列 1fr 吸收剩余宽度并强制换行，
-    // 避免长文本/长 ASCII 串把表格撑出页面
-    const colSpec = cols <= 1 ? '1fr' : [...Array.from({ length: cols - 1 }, () => 'auto'), '1fr'].join(', ')
+    // 列宽按内容长度加权：每列取全表该列最长纯文本长度为权重（0.75 次幂压缩，
+    // 避免超长列吃光整页），以 Nfr 显式分配——内容最长的列分到最宽，
+    // 且所有列按比例铺满页宽（长文本在列内自然换行，不撑出页面）。
+    const colSpec = this.columnSpec(node, cols)
     const out = [
       '#table(',
       `  columns: (${colSpec}),`,
       `  align: (${aligns}),`,
-      `  table.header(`,
+      '  table.header(',
       ...headerCells.map((l: string) => `  ${l},`),
       '  ),',
     ]
@@ -298,6 +299,35 @@ export class Compiler {
     }
     out.push(')')
     return out
+  }
+
+  /** 加权列宽：每列权重 = max(内容长度)^0.75，输出 "2.1fr, 8.5fr, …" */
+  private columnSpec(node: AnyNode, cols: number): string {
+    const lens: number[] = Array.from({ length: cols }, (): number => 0)
+    for (const row of node.children ?? []) {
+      const cells: AnyNode[] = row.children ?? []
+      for (let i = 0; i < cols; i++) {
+        lens[i] = Math.max(lens[i], this.textLen(cells[i] ?? { children: [] }))
+      }
+    }
+    const weights = lens.map((l) => Math.pow(Math.max(l, 1), 0.75))
+    const total = weights.reduce<number>((a, b) => a + b, 0)
+    // 每列至少 6% 页宽，避免短列（如序号列）被压到不可读
+    const minRatio = 0.06 * total
+    const specs = weights.map((w) => {
+      const v = Math.max(w, minRatio)
+      return `${(v / total).toFixed(3)}fr`
+    })
+    return specs.join(', ')
+  }
+
+  /** 节点纯文本长度（递归，text/html 取 value，其余走 children） */
+  private textLen(node: AnyNode): number {
+    if (!node) return 0
+    if (node.type === 'text' || node.type === 'html' || node.type === 'code') {
+      return String(node.value ?? '').length
+    }
+    return (node.children ?? []).reduce((sum: number, c: AnyNode) => sum + this.textLen(c), 0)
   }
 
   private cell(cell: AnyNode): string {

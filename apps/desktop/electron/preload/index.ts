@@ -17,6 +17,8 @@ const api = {
     create: (name: string, title: string, authors: string[]) => ipcRenderer.invoke(IPC.bookCreate, name, title, authors),
     rename: (oldName: string, newName: string) => ipcRenderer.invoke(IPC.bookRename, oldName, newName),
     remove: (name: string) => ipcRenderer.invoke(IPC.bookDelete, name),
+    hide: (name: string) => ipcRenderer.invoke(IPC.bookHide, name),
+    unhide: (name: string) => ipcRenderer.invoke(IPC.bookUnhide, name),
     writeToml: (dir: string, title: string, authors: string[], versions: unknown, active: string | null) =>
       ipcRenderer.invoke(IPC.bookWriteToml, dir, title, authors, versions, active),
     chapterCreate: (dir: string, fileName: string, title: string) => ipcRenderer.invoke(IPC.chapterCreate, dir, fileName, title),

@@ -65,7 +65,12 @@ function AppInner() {
     else pendingBookOpen.current = { dir: added.dir, name: added.name }
   }, [workspace, refresh])
 
-  const empty = workspace !== null && workspace.books.length === 0 && workspace.projects.length === 0
+  // 空工作区判定：外部书籍引用也视为已有内容（打开外部书后不再提示"工作区为空"）
+  const empty =
+    workspace !== null &&
+    workspace.books.length === 0 &&
+    workspace.projects.length === 0 &&
+    (workspace.externalBooks ?? []).length === 0
 
   // 全局快捷键（编辑器内的格式快捷键由编辑器自身处理）
   useEffect(() => {
@@ -178,7 +183,7 @@ function AppInner() {
     <div className="app">
       <ActivityBar active={activity} onSelect={setActivity} />
       <div className="main-area">
-        {empty && (
+        {empty && activity === 'book' && (
           <div className="empty-hint">
             <p>当前工作区为空。创建一个示例书籍与示例项目开始体验？</p>
             <button onClick={() => void api.workspace.initDemo().then(() => location.reload())}>

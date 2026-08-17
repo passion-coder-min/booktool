@@ -12,6 +12,8 @@ interface Settings {
   workspaceRoot: string | null
   /** 外部打开的书籍（mdBook 兼容目录，原位置引用） */
   externalBooks?: ExternalBookRef[]
+  /** 已从管理列表移除（仅隐藏，目录保留）的内置书籍名 */
+  hiddenBooks?: string[]
 }
 
 const settingsFile = () => join(app.getPath('userData'), 'settings.json')
@@ -85,9 +87,13 @@ export async function chooseWorkspaceRoot(): Promise<string | null> {
 export function scanWorkspace(): WorkspaceInfo {
   const root = getWorkspaceRoot()
   const booksRoot = join(root, 'books')
-  const books = existsSync(booksRoot)
+  const allBooks = existsSync(booksRoot)
     ? readdirSync(booksRoot, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
     : []
+  // 隐藏名单：仅从管理列表移除（目录保留在 books/ 下），其余照常显示
+  const hidden = new Set(readSettings().hiddenBooks ?? [])
+  const books = allBooks.filter((n) => !hidden.has(n))
+  const hiddenBooks = allBooks.filter((n) => hidden.has(n))
   // 外部书籍：保留仍存在的目录
   const externalBooks = (readSettings().externalBooks ?? []).filter((b) => existsSync(b.dir))
 
@@ -106,7 +112,23 @@ export function scanWorkspace(): WorkspaceInfo {
       projects.push({ ...meta, dir, wikiFiles, taskCount })
     }
   }
-  return { root, books, externalBooks, projects }
+  return { root, books, externalBooks, hiddenBooks, projects }
+}
+
+/** 仅从管理列表移除内置书籍（隐藏，不删除 books/ 目录） */
+export function hideBook(name: string): WorkspaceInfo {
+  const s = readSettings()
+  const list = s.hiddenBooks ?? []
+  if (!list.includes(name)) list.push(name)
+  writeSettings({ ...s, hiddenBooks: list })
+  return scanWorkspace()
+}
+
+/** 恢复被隐藏的内置书籍 */
+export function unhideBook(name: string): WorkspaceInfo {
+  const s = readSettings()
+  writeSettings({ ...s, hiddenBooks: (s.hiddenBooks ?? []).filter((n) => n !== name) })
+  return scanWorkspace()
 }
 
 function listMd(dir: string): string[] {

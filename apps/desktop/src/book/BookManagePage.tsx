@@ -35,9 +35,25 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
     setCreating(false)
   }
 
+  /** 删除书籍：两级确认。一级【确定】=仅从管理列表移除（默认，文件保留、可恢复）；
+   *  一级取消后进入二级，【确定】才彻底删除目录（不可恢复）。 */
   const remove = async (name: string) => {
-    if (!confirm(`确认删除书籍「${name}」？该操作会删除整个书籍目录（含源文件），不可恢复。`)) return
+    if (
+      confirm(
+        `从管理列表移除书籍「${name}」？\n\n` +
+          '【确定】仅移除出管理列表，书籍文件保留在 books/ 目录（可在下方"已移除书籍"中恢复）\n' +
+          '【取消】不移除，继续询问是否彻底删除',
+      )
+    ) {
+      await guard(() => api.book.hide(name))
+      return
+    }
+    if (!confirm(`要彻底删除书籍「${name}」吗？\n\n将删除整个书籍目录（含全部源文件），不可恢复！`)) return
     await guard(() => api.book.remove(name))
+  }
+
+  const unhide = async (name: string) => {
+    await guard(() => api.book.unhide(name))
   }
 
   /** 打开外部目录（mdBook 兼容书籍）并注册，随后自动打开 */
@@ -74,6 +90,7 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
 
   if (!workspace || (workspace.books.length === 0 && workspace.externalBooks.length === 0)) {
     return (
+      <>
       <EmptyCard
         icon="📚"
         title="还没有书籍"
@@ -98,6 +115,10 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
           </span>
         }
       />
+      {workspace && workspace.hiddenBooks.length > 0 && (
+        <HiddenBooksRow hidden={workspace.hiddenBooks} onUnhide={unhide} />
+      )}
+      </>
     )
   }
 
@@ -133,6 +154,10 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
           <ExternalCard key={b.dir} name={b.name} dir={b.dir} onOpen={() => onOpenBook(b.dir, b.name)} onRemove={() => void removeExternal(b.dir)} />
         ))}
       </div>
+
+      {workspace.hiddenBooks.length > 0 && (
+        <HiddenBooksRow hidden={workspace.hiddenBooks} onUnhide={unhide} />
+      )}
 
       {creating && <NewBookModal onClose={() => setCreating(false)} onSubmit={create} />}
       {renaming && (
@@ -204,6 +229,26 @@ function ExternalCard({ name, dir, onOpen, onRemove }: { name: string; dir: stri
           移除
         </button>
       </div>
+    </div>
+  )
+}
+
+/** 已从管理列表移除（仅隐藏、文件保留）的书籍：点击恢复重新显示 */
+function HiddenBooksRow({ hidden, onUnhide }: { hidden: string[]; onUnhide: (name: string) => void }) {
+  return (
+    <div style={{ marginTop: 18, fontSize: 12.5, color: 'var(--muted)' }}>
+      <span>已移除书籍（文件保留，点击恢复）：</span>
+      {hidden.map((name) => (
+        <button
+          key={name}
+          className="small ghost"
+          style={{ marginRight: 6 }}
+          title={`恢复「${name}」到管理列表`}
+          onClick={() => onUnhide(name)}
+        >
+          ↩ {name}
+        </button>
+      ))}
     </div>
   )
 }

@@ -151,11 +151,25 @@ describe('mdast→Typst 列表与引用', () => {
 describe('mdast→Typst 表格与容器', () => {
   it('GFM 表格含对齐', () => {
     const out = t('| 左 | 中 | 右 |\n|---|:-:|--:|\n| a | b | c |')
-    expect(out).toContain('columns: (auto, auto, 1fr),')
+    // 列宽按内容长度加权（等长内容 → 各列近似均分，以 N.fr 显式分配）
+    expect(out).toMatch(/columns: \([\d.]+fr, [\d.]+fr, [\d.]+fr\),/)
     expect(out).toContain('align: (auto, center, right),')
     expect(out).toContain('table.header(')
     expect(out).toContain('[左],')
     expect(out).toContain('[c],')
+  })
+
+  it('表格列宽按内容长度加权（最长内容的列分到最宽）', () => {
+    const out = t('| 序号 | 很长很长的说明文字内容这一列最长 | 值 |\n|---|---|---|\n| 1 | 这里的说明文字也比较长一些 | x |')
+    const m = out.match(/columns: \(([\d.]+)fr, ([\d.]+)fr, ([\d.]+)fr\),/)
+    expect(m).not.toBeNull()
+    if (m) {
+      const [w1, w2, w3] = [Number(m[1]), Number(m[2]), Number(m[3])]
+      // 中列内容最长（17字）→ 权重最大，且显著大于短内容列
+      expect(w2).toBeGreaterThan(w1)
+      expect(w2).toBeGreaterThan(w3)
+      expect(w2).toBeGreaterThan(w1 + w3)
+    }
   })
 
   it('[TOC] 标记被移除（不渲染字面文本）', () => {

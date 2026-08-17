@@ -16,6 +16,10 @@ export const IPC = {
   bookCreate: 'book:create',
   bookRename: 'book:rename',
   bookDelete: 'book:delete',
+  /** 仅从管理列表移除内置书籍（隐藏，保留 books/ 目录不删文件） */
+  bookHide: 'book:hide',
+  /** 恢复被隐藏的内置书籍到管理列表 */
+  bookUnhide: 'book:unhide',
   bookWriteToml: 'book:write-toml',
   chapterCreate: 'chapter:create',
   chapterRename: 'chapter:rename',
