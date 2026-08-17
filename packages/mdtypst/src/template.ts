@@ -21,15 +21,17 @@ export interface TemplateOptions {
 export function renderTemplate(): string {
   return `// ---- BookTool 共享函数（样式见 main.typ；set/show 不跨 include 生效）----
 
-// 图片自适应：超过页面可用高度/宽度时等比缩小，永不溢出分页
+// 图片自适应：SVG 矢量图放大填满页面可用宽/高（放大不失真，避免过小）；
+// 位图只缩小不放大（放大会模糊失真），永不溢出分页
 #let auto-fit-image(src) = layout(size => {
   let img = image(src)
   let m = measure(img)
-  let f = calc.min(
-    1.0,
-    (size.height - 60pt) / m.height,
-    size.width / m.width,
-  )
+  let is-svg = type(src) == "str" and src.ends-with(".svg")
+  let f = if is-svg {
+    calc.min((size.height - 60pt) / m.height, size.width / m.width)
+  } else {
+    calc.min(1.0, (size.height - 60pt) / m.height, size.width / m.width)
+  }
   align(center, scale(img, x: f * 100%, y: f * 100%))
 })
 

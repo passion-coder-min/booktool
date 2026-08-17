@@ -209,10 +209,12 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
       setReport(r)
       setPdfPath(r.pdfPath)
       setPdfVersion((v) => v + 1)
-      // 编译完成自动同步诊断面板：有错误/警告 → 底部弹出并选中首条错误，
-      // 方便逐条点击跳转；干净编译 → 自动收起，释放编辑/预览空间
+      // 编译完成自动同步诊断面板：仅编译失败（有 error）才自动弹出并选中首条
+      // 错误；只有警告不自动弹（警告多时反复弹出会打扰、占空间），用户想看
+      // 点状态栏「⚠诊断」按钮手动展开；干净编译 → 自动收起
       const ds = r.diagnostics ?? []
-      if (ds.length > 0) {
+      const hasErr = ds.some((d) => d.severity === 'error')
+      if (hasErr) {
         setDiagOpen(true)
         const firstErr = ds.findIndex((d) => d.severity === 'error')
         setDiagIndex(firstErr >= 0 ? firstErr : 0)

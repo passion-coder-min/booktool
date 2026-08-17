@@ -80,9 +80,11 @@ export default function SingleFileMode({ file, onClose, onRegisterCommands }: Pr
       setReport(r)
       setPdfPath(r?.pdfPath ?? null)
       setPdfVersion((v) => v + 1)
-      // 与书籍模式一致：有诊断自动弹出于底部并选中首条错误，干净编译自动收起
+      // 与书籍模式一致：仅 error 自动弹出于底部并选中首条错误；只有警告
+      // 不自动弹（点状态栏诊断查看）；干净编译自动收起
       const ds = r?.diagnostics ?? []
-      if (ds.length > 0) {
+      const hasErr = ds.some((d) => d.severity === 'error')
+      if (hasErr) {
         setDiagOpen(true)
         const firstErr = ds.findIndex((d) => d.severity === 'error')
         setDiagIndex(firstErr >= 0 ? firstErr : 0)
