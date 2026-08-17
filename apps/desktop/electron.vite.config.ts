@@ -36,6 +36,15 @@ export default defineConfig({
       },
     },
     build: {
+      // dev 模式 watch 范围：只盯应用源码与 workspace 包（会改的），
+      // 不 watch 参与 bundle 的 node_modules 依赖（remark 生态数千文件，
+      // 低 fd 上限机器上触发 EMFILE: too many open files）。构建产物不受影响。
+      watch: {
+        include: [
+          resolve(__dirname, 'electron/**'),
+          resolve(__dirname, '../../packages/*/src/**'),
+        ],
+      },
       rollupOptions: {
         input: { index: resolve(__dirname, 'electron/main/index.ts') },
       },
@@ -49,6 +58,12 @@ export default defineConfig({
       },
     },
     build: {
+      watch: {
+        include: [
+          resolve(__dirname, 'electron/**'),
+          resolve(__dirname, '../../packages/*/src/**'),
+        ],
+      },
       rollupOptions: {
         input: { index: resolve(__dirname, 'electron/preload/index.ts') },
       },
