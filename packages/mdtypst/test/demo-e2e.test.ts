@@ -114,6 +114,16 @@ $$\\begin{aligned} \\nabla \\cdot \\mathbf{E} &= \\rho / \\epsilon_0 \\\\ \\nabl
 
 HTML 表格与 GFM 表格共用同一套列宽（min/max 加权）与 ZWSP 断行算法。
 
+## 缺格 HTML 表格（抓取常见，验证不错位）
+
+<table>
+<tr><th>状态</th><th>number</th><th>说明</th></tr>
+<tr><td>ACTIVE</td><td>ro</td></tr>
+<tr><td>IDLE</td><td>42</td><td>空闲态，连接池保留 number 条</td></tr>
+</table>
+
+第 1 行缺"说明"格：应补空单元格而不是把下一行内容错位填入。
+
 ## 删除线与任务
 
 ~~旧方案已废弃~~。本周计划：
@@ -310,5 +320,37 @@ describe('端到端：示例书籍编译 PDF', { timeout: 240_000 }, () => {
     const pdf = join(bookDir, 'output', 'book.pdf')
     expect(existsSync(pdf)).toBe(true)
     expect(statSync(pdf).size).toBeGreaterThan(10_000)
+
+    // 客观重叠检测：提取 PDF 全部词的包围盒，同一行内水平相交 >1pt 即为
+    // 文字重叠（溢出单元格画到相邻列）。本章含 7 列宽表 / 长常量 API 表 /
+    // HTML 抓取表 / 缺格表，全部应零重叠。
+    const pdftotext = spawnSync('pdftotext', ['-bbox', pdf, '-'], { encoding: 'utf-8', timeout: 60_000 })
+    expect(pdftotext.status).toBe(0)
+    const overlaps: string[] = []
+    if (pdftotext.status === 0 && pdftotext.stdout) {
+      const pageRe = /<page[^>]*>([\s\S]*?)<\/page>/g
+      const wordRe = /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g
+      let pm: RegExpExecArray | null
+      while ((pm = pageRe.exec(pdftotext.stdout))) {
+        const words: [number, number, number, number, string][] = []
+        let wm: RegExpExecArray | null
+        while ((wm = wordRe.exec(pm[1]))) {
+          words.push([+wm[1], +wm[2], +wm[3], +wm[4], wm[5]])
+        }
+        words.sort((a, b) => a[1] - b[1] || a[0] - b[0])
+        for (let i = 0; i < words.length; i++) {
+          for (let j = i + 1; j < words.length; j++) {
+            const a = words[i]!, b = words[j]!
+            const ay = (a[1] + a[3]) / 2
+            const by = (b[1] + b[3]) / 2
+            if (by - ay > 4) break // 已按 y 排序，后续不再同行
+            if (Math.abs(ay - by) > 4) continue
+            const ov = Math.min(a[2], b[2]) - Math.max(a[0], b[0])
+            if (ov > 1) overlaps.push(`「${a[4]}」×「${b[4]}」 ${ov.toFixed(1)}pt`)
+          }
+        }
+      }
+    }
+    expect(overlaps, `PDF 存在文字重叠：\n${overlaps.join('\n')}`).toEqual([])
   })
 })

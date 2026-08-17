@@ -140,6 +140,41 @@ export function htmlTableToTypst(html: string): string[] {
   })
   if (colCount === 0) return []
 
+  // 行×列网格重建：抓取的 HTML 常有整行缺格（浏览器渲染时自动补空），
+  // 而 Typst 对单元格按序填充——缺格会把后续行的单元格错位填入本行的
+  // 空槽（实测：5 列表第 2 行只写 2 格，第 3 行的 A3/B3/C3 被填进第 2 行），
+  // 视觉上即"错位/重叠"。按布局网格逐行发射：缺格补 []；上方 rowspan
+  // 占据的槽位不发射（Typst 自动跳过已占槽位）。
+  const grid: (HtmlTableCell | undefined)[][] = []
+  const coveredSlots = new Set<string>()
+  for (const { row, col, cell } of layout) {
+    const g = (grid[row] ??= [])
+    for (let k = 0; k < cell.colspan; k++) g[col + k] = cell
+    for (let dr = 1; dr < cell.rowspan; dr++) {
+      for (let dc = 0; dc < cell.colspan; dc++) coveredSlots.add(`${row + dr},${col + dc}`)
+    }
+  }
+  const rowCells = (r: number): string[] => {
+    const out: string[] = []
+    const g = grid[r] ?? []
+    let c = 0
+    while (c < colCount) {
+      if (coveredSlots.has(`${r},${c}`)) {
+        c++
+        continue
+      }
+      const cell = g[c]
+      if (!cell) {
+        out.push('[]')
+        c++
+        continue
+      }
+      out.push(spanCell(cell))
+      c += cell.colspan
+    }
+    return out
+  }
+
   // 列宽：与 GFM 表格共享 min/max 加权算法（table-layout.ts）。
   // 原策略（前几列 auto + 末列 1fr）在 Typst 协商 auto 列时，含不可断长
   // token（代码标识符/常量，Android 文档 API 表常见）的列可能被压窄，
@@ -160,15 +195,15 @@ export function htmlTableToTypst(html: string): string[] {
   // 头部行（连续以 <th> 开头的行）
   let hi = 0
   while (hi < rows.length && rows[hi][0]?.isHead) hi++
-  if (hi > 0) {
-    for (let r = 0; r < hi; r++) {
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rowCells(r)
+    if (r < hi) {
       out.push('  table.header(')
-      for (const cell of rows[r]) out.push(`    ${spanCell(cell)},`)
+      for (const c of cells) out.push(`    ${c},`)
       out.push('  ),')
+    } else {
+      for (const c of cells) out.push(`  ${c},`)
     }
-  }
-  for (let r = hi; r < rows.length; r++) {
-    for (const cell of rows[r]) out.push(`  ${spanCell(cell)},`)
   }
   out.push(')')
   if (wideSize) out.push(']')

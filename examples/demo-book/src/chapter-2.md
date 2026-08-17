@@ -63,6 +63,16 @@ $$\begin{aligned} \nabla \cdot \mathbf{E} &= \rho / \epsilon_0 \\ \nabla \times 
 
 HTML 表格与 GFM 表格共用同一套列宽（min/max 加权）与 ZWSP 断行算法。
 
+## 缺格 HTML 表格（抓取常见，验证不错位）
+
+<table>
+<tr><th>状态</th><th>number</th><th>说明</th></tr>
+<tr><td>ACTIVE</td><td>ro</td></tr>
+<tr><td>IDLE</td><td>42</td><td>空闲态，连接池保留 number 条</td></tr>
+</table>
+
+第 1 行缺"说明"格：应补空单元格而不是把下一行内容错位填入。
+
 ## 删除线与任务
 
 ~~旧方案已废弃~~。本周计划：

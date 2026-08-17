@@ -241,6 +241,27 @@ describe('mdast→Typst 表格与容器', () => {
     expect(plain).toContain('getGlobalAlertBytes(long def)')
   })
 
+  it('HTML 表格缺格行补空不错位（Typst 按序填充会串行）', () => {
+    const html = [
+      '<table>',
+      '<tr><th>状态</th><th>number</th><th>说明</th></tr>',
+      '<tr><td>ACTIVE</td><td>ro</td></tr>',
+      '<tr><td>IDLE</td><td>42</td><td>空闲态</td></tr>',
+      '</table>',
+    ].join('')
+    const out = t(html)
+    // 每行恰好 3 个单元格：第 1 数据行（缺说明格）补 []，共 3×3=9
+    const bodyCells = out.split('\n').filter((l) => /^ {2}\[/.test(l) || /^ {2}table\.cell\(/.test(l) || /^ {4}\[/.test(l))
+    expect(bodyCells.length).toBe(9)
+    expect(out).toContain('[],')
+    // 网格重建：IDLE 行的内容仍在自己的行（错位时 42/空闲态 会被填入上一行）
+    const idleLine = out.split('\n').findIndex((l) => l.includes('[IDLE]'))
+    const idle42 = out.split('\n').findIndex((l) => l.includes('[42]'))
+    const idleText = out.split('\n').findIndex((l) => l.includes('[空闲态]'))
+    expect(idleLine).toBe(idle42 - 1)
+    expect(idle42).toBe(idleText - 1)
+  })
+
   it('含不可断长 token 的列宽兜底（方法名/常量列不被裁断）', () => {
     // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）
     const out = t(
