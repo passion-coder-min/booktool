@@ -352,5 +352,32 @@ describe('端到端：示例书籍编译 PDF', { timeout: 240_000 }, () => {
       }
     }
     expect(overlaps, `PDF 存在文字重叠：\n${overlaps.join('\n')}`).toEqual([])
+
+    // 回归：Mermaid/SVG 图不得被 Typst 0.15.1 的 scale(SVG) 缺陷缩成 ~100pt 宽。
+    // 以第三章 flowchart LR 的最左节点「源文件」→ 最右节点「生成」的文字跨度衡量：
+    // 修复前整图仅 ~104pt（跨度远小于内容区宽），修复后应占内容区宽 60% 以上。
+    const contentWidth = 595.28 - 2 * 2.2 * 28.3465 // A4 宽 - 左右边距 2.2cm（pt）
+    const mermaidRe = /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g
+    let mm: RegExpExecArray | null
+    let left = Infinity
+    let right = -Infinity
+    let mermaidWords = 0
+    while ((mm = mermaidRe.exec(pdftotext.stdout))) {
+      if (mm[5].includes('源文件')) {
+        left = Math.min(left, +mm[1])
+        mermaidWords++
+      }
+      if (mm[5].includes('生成')) {
+        right = Math.max(right, +mm[3])
+        mermaidWords++
+      }
+    }
+    expect(mermaidWords, '未在 PDF 中定位到 Mermaid 节点文字').toBeGreaterThan(0)
+    const mermaidSpan = right - left
+    expect(
+      mermaidSpan,
+      `Mermaid 图过窄：跨度 ${mermaidSpan.toFixed(1)}pt，应 ≥ 内容区宽 60%（${(contentWidth * 0.6).toFixed(1)}pt）。` +
+        'Typst 0.15.1 对 scale() 包裹的 SVG 会额外缩放，务必用 image(src, width:) 嵌入。',
+    ).toBeGreaterThan(contentWidth * 0.6)
   })
 })

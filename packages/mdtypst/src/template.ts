@@ -22,17 +22,22 @@ export function renderTemplate(): string {
   return `// ---- BookTool 共享函数（样式见 main.typ；set/show 不跨 include 生效）----
 
 // 图片自适应：SVG 矢量图放大填满页面可用宽/高（放大不失真，避免过小）；
-// 位图只缩小不放大（放大会模糊失真），永不溢出分页
+// 位图只缩小不放大（放大会模糊失真），永不溢出分页。
+// 嵌入用 image(src, width:) 仅指定宽度、高度由固有宽高比推出——不用 scale()：
+// Typst 0.15.1 的 PDF 后端对 scale() 包裹的 SVG 会额外再乘一层缩放，导致矢量图
+// 在 PDF 里被缩成很小（如 Android 启动流程图本应 ~470pt 满行宽，实际只 ~104pt）。
 #let auto-fit-image(src) = layout(size => {
   let img = image(src)
   let m = measure(img)
-  let is-svg = type(src) == "str" and src.ends-with(".svg")
+  // 注意：必须用 type(src) == str（无引号）。type(src) == "str" 在 Typst 里恒为
+  // false，会导致 is-svg 永远不成立、SVG 被当位图套 1.0 上限而无法放大。
+  let is-svg = type(src) == str and src.ends-with(".svg")
   let f = if is-svg {
     calc.min((size.height - 60pt) / m.height, size.width / m.width)
   } else {
     calc.min(1.0, (size.height - 60pt) / m.height, size.width / m.width)
   }
-  align(center, scale(img, x: f * 100%, y: f * 100%))
+  align(center, image(src, width: m.width * f))
 })
 
 // 提示容器（:::note/tip/warning/danger）
