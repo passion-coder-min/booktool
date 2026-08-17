@@ -369,7 +369,47 @@ export class Compiler {
   }
 
   private cell(cell: AnyNode): string {
-    return `[${this.content(cell.children)}]`
+    // 表格单元格内启用长 token 断行机会（ZWSP）：列宽算法（columnSpec）保证
+    // 常规表格按内容比例分配；当全表内容超过页宽时列被压缩，Typst 不会在
+    // 长 token（代码标识符/URL）内部断行 → 溢出单元格、与相邻列重叠。
+    // ZWSP 只是"可断点"，放得下就不折行，等价 CSS overflow-wrap: break-word。
+    this.inTableCell = true
+    try {
+      return `[${this.content(cell.children)}]`
+    } finally {
+      this.inTableCell = false
+    }
+  }
+
+  /** 表格单元格作用域标志：inline() 的 text/inlineCode 分支据此插入 ZWSP */
+  private inTableCell = false
+
+  /** 为长原子（无空格的连续串）插入零宽断行机会 U+200B：
+   *  断点选在 "_" "-" "/" "." ")" 之后与小写→大写的驼峰边界，
+   *  连续 12 字符无自然断点时兜底补一个。只影响可断性，不改可见文本。 */
+  private breakableText(s: string): string {
+    return s
+      .split(/(\s+)/)
+      .map((atom) => {
+        if (!atom || /^\s+$/.test(atom) || atom.length <= 14) return atom
+        let out = ''
+        let run = 0
+        for (let i = 0; i < atom.length; i++) {
+          const ch = atom[i]!
+          out += ch
+          run++
+          const next = atom[i + 1] ?? ''
+          if (!next) break
+          const afterSep = '_-/.)'.includes(ch) && /[A-Za-z0-9\u4e00-\u9fff]/.test(next)
+          const camel = /[a-z0-9]/.test(ch) && /[A-Z]/.test(next)
+          if (afterSep || camel || run >= 12) {
+            out += '\u{200b}'
+            run = 0
+          }
+        }
+        return out
+      })
+      .join('')
   }
 
   // ---------------- 内联（content 模式） ----------------
@@ -425,7 +465,7 @@ export class Compiler {
   private inline(node: AnyNode): string {
     switch (node.type) {
       case 'text':
-        return escapeTypstText(node.value)
+        return escapeTypstText(this.inTableCell ? this.breakableText(node.value) : node.value)
       case 'emphasis':
         return `#emph[${this.content(node.children)}]`
       case 'strong':
@@ -433,7 +473,7 @@ export class Compiler {
       case 'delete':
         return `#strike[${this.content(node.children)}]`
       case 'inlineCode':
-        return `#raw(${typstString(node.value)}, block: false)`
+        return `#raw(${typstString(this.inTableCell ? this.breakableText(node.value) : node.value)}, block: false)`
       case 'break':
         return '#linebreak()'
       case 'inlineMath': {

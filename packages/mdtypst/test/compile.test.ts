@@ -172,6 +172,23 @@ describe('mdast→Typst 表格与容器', () => {
     }
   })
 
+  it('表格内长 token 插入零宽断行机会（防溢出重叠）', () => {
+    const out = t('| 方法 | 默认值 |\n|---|---|\n| getGlobalAlertBytes(long def) | DEFAULT_PERFORM_POLL_DELAY_MS |')
+    // 驼峰边界插入 ZWSP（getGlobalAlertBytes 无需转义的字符）
+    expect(out).toContain('get\u{200b}Global\u{200b}Alert\u{200b}Bytes')
+    // 下划线边界插入（DEFAULT_PERFORM_POLL_DELAY_MS 有 4 个 _ 边界）
+    expect((out.match(/\u200b/g) ?? []).length).toBeGreaterThanOrEqual(4)
+    // 可见文本不变：去掉 ZWSP 与转义反斜杠后内容原样
+    const plain = out.replace(/[\u200b\\]/g, '')
+    expect(plain).toContain('DEFAULT_PERFORM_POLL_DELAY_MS')
+    expect(plain).toContain('getGlobalAlertBytes(long def)')
+  })
+
+  it('表格外正文与短内容不插入断行机会', () => {
+    expect(t('正文里出现 DEFAULT_PERFORM_POLL_DELAY_MS 不会被改写')).not.toContain('\u{200b}')
+    expect(t('| a | b |\n|---|---|\n| 1 | 2 |')).not.toContain('\u{200b}')
+  })
+
   it('含不可断长 token 的列宽兜底（方法名/常量列不被裁断）', () => {
     // 复现：方法名列 + 中文说明列 + 常量默认值列（API 文档常见形态）
     const out = t(

@@ -82,6 +82,18 @@ $$\\begin{aligned} \\nabla \\cdot \\mathbf{E} &= \\rho / \\epsilon_0 \\\\ \\nabl
 | Mermaid 图表 | 插件 | 内建 |
 | 数学公式 | MathJax | Typst 原生 |
 
+## API 长标识符表格（断行与列宽回归）
+
+| 方法 | 说明 | 值 |
+|---|---|---|
+| \`getPollInterval()\` | 获取网络统计数据的轮询间隔时间（毫秒） | 30分钟 |
+| \`getPollDelay()\` | 获取执行轮询的延迟时间（毫秒） | \`DEFAULT_PERFORM_POLL_DELAY_MS\` |
+| \`getGlobalAlertBytes(long def)\` | 获取全局网络流量警告的字节数，若未设置则返回默认值 | 传入的默认值 def |
+| \`getSampleEnabled()\` | 获取是否启用采样功能, 主要用于上层跟踪 | true |
+
+含不可断长 token（代码标识符/常量）的表格：列宽按 min-content 兜底分配，
+超宽时在零宽断行点（下划线/驼峰边界）折行，不溢出单元格、不与相邻列重叠。
+
 ## 删除线与任务
 
 ~~旧方案已废弃~~。本周计划：
