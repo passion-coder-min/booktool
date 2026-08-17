@@ -3,8 +3,18 @@
   "fontFamily": "Noto Sans SC",
   "securityLevel": "strict",
   "htmlLabels": false,
-  "flowchart": { "htmlLabels": false },
-  "class": { "htmlLabels": false },
-  "sequence": { "useMaxWidth": true },
-  "gantt": { "useMaxWidth": true }
+  "flowchart": {
+    "htmlLabels": false,
+    "nodeSpacing": 90,
+    "rankSpacing": 90
+  },
+  "class": {
+    "htmlLabels": false
+  },
+  "sequence": {
+    "useMaxWidth": true
+  },
+  "gantt": {
+    "useMaxWidth": true
+  }
 }
