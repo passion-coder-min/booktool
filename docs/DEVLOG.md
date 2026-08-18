@@ -199,14 +199,40 @@
 - 产出：`booktool-0.1.0-amd64.deb`（108MB）+ `booktool-0.1.0-x86_64.AppImage`（177MB），
   应用真实启动无错；deb 含 `/usr/share/applications` 菜单项与 hicolor 图标
 
+### 第十二阶段：日历任务交互 + Wiki 层级树 + 工作日报（08-17 ~ 08-18，用户反馈驱动）
+
+- **日历任务交互升级**：任务卡片悬停显示详情浮层（`TaskHoverCard`，只读、`pointer-events:none` 不干扰拖拽、
+  fixed 定位跟随鼠标并贴视口边缘）；双击卡片打开编辑弹窗（`stopPropagation` 挡日期格双击新建）；
+  单击不再弹详情弹窗（此前会被 dnd-kit 吞掉）。接线经 `CalendarView` → `DayCell` → 卡片
+  `onMouseEnter/onDoubleClick` 上抛到 `CalendarActivity`。
+- **Wiki 层级树**：侧栏把 `wikiFiles` 按 `/` 拆成「文件夹 + 叶子」的可折叠树（CherryTree 式，
+  `buildWikiTree` + `WikiTree`），保留新建（`文件夹/名.md`）、重命名/移动、删除、当前高亮；
+  存储仍为 `wiki/**/*.md`，无后端改动。
+- **工作日报**：每项目 `reports/` 每周一个 md 文件（`<周一日期>-W<ISO周号>.md`）。新增共享 `dates.ts`
+  （`isoWeekOf`/`weekFileName`/`weekdayLabel`）、主进程 `reports.ts`（`ensureWeek`/`addToday`/`read`/`write` 原子写）、
+  4 条日报 IPC 通道（shared 契约/主进程/preload/api-types 四层接线齐全）。「📝 日报」页签进入时自动
+  `ensureWeek`（一周后自动换新文件），「＋ 今日日报」追加当日小节；`ReportsPane` 复用 Vditor 编辑 +
+  500ms 防抖自动保存。
+- **AGENTS.md**：新增仓库级开发指南（架构/命令/IPC 扩展/关键坑/提交规范）。
+- **应用内走查发现并修复**：Wiki/日报的 Vditor 编辑区内容为空 —— 两个 Pane 都是先挂载 Vditor 再异步
+  `setDoc`，而 `VditorEditor` 只在 `docKey` 变化时重建、忽略 `value` 变化，异步内容到达后不刷新
+  （书籍编辑走「先读内容再换 docKey」所以正常）。修复：两个 Pane 加 `loaded` 门控，内容就绪后才挂载
+  Vditor（初始 `value` 即真实内容）；顺带拦截空 `file` 读取（此前 `report:read('')` 会对 `reports/` 目录
+  EISDIR 报错）。
+- 验证：117/117 测试、typecheck 全绿；CDP 驱动真实应用走查 —— 日历渲染/悬停浮层/双击编辑、
+  日报进入自动建当前周文件且内容渲染、Wiki 层级树均通过。
+
 ## 验证状态（当前）
 
 | 项 | 结果 |
 |---|---|
-| Vitest | 98/98（含真实 Typst 端到端 + 桌面管线集成 + mermaid 容错 + 图片解析单测） |
+| Vitest | 117/117（含真实 Typst 端到端 + 桌面管线集成 + mermaid 容错 + 图片解析单测） |
 | 类型检查 | 三包 noEmit 全绿 |
 | 构建 | electron-vite 三端全过 |
 | 运行时 | 启动无错；截图目检：书籍管理页/工作区(IR 渲染)/任务管理页/菜单栏/工具栏单行 |
+| 日历交互 | CDP 走查：悬停任务卡片出详情浮层、双击卡片开编辑弹窗、单击不弹详情（通过） |
+| 工作日报 | 进入「📝 日报」自动建当前周文件（`2026-08-17-W34.md`）、内容渲染、侧栏按周列出（通过） |
+| Wiki 树 | 侧栏按路径层级树渲染、文件夹可折叠、当前高亮（通过） |
 | 编译显示 | 底部状态栏：`✓ 编译完成 Xs · 相对路径` + 打开/预览（工具栏右侧无路径胶囊） |
 | 滚动 | 长文 DOM 断言 `scrollable:true`（scrollH 16156 > clientH 833，回归修复后） |
 | callout 三端 | 所见即所得 / HTML 预览 / 编译 PDF 均渲染为提醒框（HTML 预览回归修复） |
