@@ -51,12 +51,15 @@ apps/desktop
 
 ```
 books/<name>/{book.toml, src/SUMMARY.md, src/*.md}    # 出版书籍（mdBook 形态）
-projects/<id>/{project.json, wiki/, reports/, tasks/}  # 项目：Wiki 树 / 工作日报 / 任务
+projects/<id>/{project.json, wiki/, reports/, tasks.md}  # 项目：Wiki 树 / 工作日报 / 任务
 ```
 
-- Wiki：`wiki/**/*.md`（支持子目录 → 层级树）
+- Wiki：`wiki/**/*.md`（支持子目录 → CherryTree 层级树）
 - 日报：`reports/<周一日期>-W<ISO周号>.md`（如 `2026-08-17-W34.md`），每周一个文件，按天 `## YYYY-MM-DD 周X`
-- 任务：`tasks/<id>.md`（frontmatter + body）
+- 任务：**`tasks.md`（markdown checkbox，一行一任务）**——`- [ ] 标题 (不重要) (紧急) @截止 ~计划 #标签`，
+  状态括号 `[ ]`待办 `[/]`进行中 `[B]`阻塞 `[x]`完成；**默认象限 = 重要·不紧急**（`(不重要)` 显式降级、
+  `(紧急)` 显式升级，旧 `(重要)` 仍兼容）；完成项超过阈值（40）自动移入 `tasks-done.md` 归档。
+  旧模型 `tasks/<id>.md`（frontmatter）首次读取时自动迁移成 tasks.md。
 
 ## 关键约定与坑（务必先读）
 
@@ -67,8 +70,9 @@ projects/<id>/{project.json, wiki/, reports/, tasks/}  # 项目：Wiki 树 / 工
   （Mermaid 图文字跨度须占内容区宽 >60%）。
 - **Typst 里 `type(x) == "str"` 恒为 false**：比较类型要用 `type(x) == str`（无引号）。这是 SVG 被当位图、
   无法放大的隐蔽原因。
-- **VditorEditor 只在 `docKey` 变化时重建**，忽略 `value` 变化。程序化更新内容（如日报"今日"追加）必须
-  在同一渲染里同时 `setDoc(新内容)` + 自增版本号并拼进 `docKey`，否则编辑区不刷新（见 `ReportsPane.tsx`）。
+- **VditorEditor 只在 `docKey` 变化时重建**，忽略 `value` 变化。异步读取内容后必须"先 `setDoc` 再挂载"
+  （`loaded` 门控，见 `ReportsPane/TaskChecklist`），程序化更新（如日报"今日"追加）则 `setDoc` + 自增版本号
+  拼进 `docKey` 同批提交，否则编辑区空白（见 `ReportsPane.addToday`）。
 - **dnd-kit 拖拽元素上 `click` 不可靠**：任务卡片交互用 `onDoubleClick`（记得 `stopPropagation` 挡住日期格
   的双击新建）+ `onMouseEnter/Leave` 做悬停浮层，不要依赖单击。
 - **dev 模式渲染层走 Vite 源文件**（`ELECTRON_RENDERER_URL`）；`out/renderer` 只给 `electron-vite preview`

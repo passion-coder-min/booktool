@@ -11,7 +11,7 @@ interface Props {
   onMutated: () => void
 }
 
-const STATUS_LABEL: Record<TaskStatus, string> = { todo: '待办', doing: '进行中', done: '已完成' }
+const STATUS_LABEL: Record<TaskStatus, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成' }
 const PRIORITY_LABEL: Record<TaskPriority, string> = { low: '低', normal: '普通', high: '高', urgent: '紧急' }
 
 /** 任务管理页：全字段表格 + 筛选 + 行内状态 + 编辑弹窗 */
@@ -199,6 +199,7 @@ export function TaskEditModal({
   const [title, setTitle] = useState(task?.title ?? '')
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? 'todo')
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'normal')
+  const [importance, setImportance] = useState(task?.importance ?? true)
   const [due, setDue] = useState(task?.due ?? '')
   const [scheduled, setScheduled] = useState(task?.scheduled ?? seedScheduled ?? '')
   const [tags, setTags] = useState(task?.tags.join(', ') ?? '')
@@ -211,6 +212,7 @@ export function TaskEditModal({
       title: title.trim(),
       status,
       priority,
+      importance,
       due: due || null,
       scheduled: scheduled || null,
       tags: tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
@@ -241,11 +243,11 @@ export function TaskEditModal({
             ))}
           </select>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
           <div className="form-row">
             <label>状态</label>
             <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
-              {(['todo', 'doing', 'done'] as TaskStatus[]).map((s) => (
+              {(['todo', 'doing', 'blocked', 'done'] as TaskStatus[]).map((s) => (
                 <option key={s} value={s}>
                   {STATUS_LABEL[s]}
                 </option>
@@ -253,7 +255,7 @@ export function TaskEditModal({
             </select>
           </div>
           <div className="form-row">
-            <label>优先级</label>
+            <label>紧急程度</label>
             <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
               {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
                 <option key={p} value={p}>
@@ -261,6 +263,13 @@ export function TaskEditModal({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="form-row">
+            <label>重要（四象限）</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <input type="checkbox" checked={importance} onChange={(e) => setImportance(e.target.checked)} />
+              重要
+            </label>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>

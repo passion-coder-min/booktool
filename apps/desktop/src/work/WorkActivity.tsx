@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { WorkspaceInfo, Task, Project } from '@booktool/shared'
 import { api } from '../api'
-import KanbanView from './KanbanView'
 import WikiPane from './WikiPane'
 import ReportsPane from './ReportsPane'
-import TaskManagePage from './TaskManagePage'
+import TaskOverview from './TaskOverview'
+import ProjectTasksView from './ProjectTasksView'
+import AllTasksView from './AllTasksView'
 import EmptyCard from '../components/EmptyCard'
 
 interface Props {
@@ -12,18 +13,26 @@ interface Props {
   onChanged: () => void
 }
 
-type SubView = 'tasks' | 'kanban' | 'wiki' | 'reports'
+type SubView = 'all' | 'overview' | 'tasks' | 'wiki' | 'reports'
 
-/** 工作活动：项目管理（侧栏）+ 子页（任务管理 / 看板 / Wiki / 日报） */
+const SECTIONS: { key: SubView; label: string }[] = [
+  { key: 'wiki', label: '📄 Wiki' },
+  { key: 'tasks', label: '✅ 任务' },
+  { key: 'reports', label: '📝 日报' },
+]
+
+/** 工作活动：CherryTree 结构（项目 → Wiki/任务/日报）+ 全局任务看板页签 */
 export default function WorkActivity({ workspace, onChanged }: Props) {
   const [projectId, setProjectId] = useState<string | null>(null)
+  const [view, setView] = useState<SubView>('overview')
   const [wikiFile, setWikiFile] = useState('')
   const [reportFile, setReportFile] = useState('')
-  const [view, setView] = useState<SubView>('tasks')
   const [tasks, setTasks] = useState<Task[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(true)
   /** Wiki 树已折叠的文件夹路径 */
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  /** CherryTree 树展开的项目 / 分区节点 */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const toggleCollapsed = useCallback((path: string) => {
     setCollapsed((prev) => {
@@ -34,12 +43,32 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
     })
   }, [])
 
+  const toggleExpand = useCallback((key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  // 首帧默认展开所有项目节点
+  useEffect(() => {
+    if (!workspace) return
+    setExpanded((prev) => {
+      if (prev.size > 0) return prev
+      const next = new Set<string>()
+      for (const p of workspace.projects) next.add(`p:${p.id}`)
+      return next
+    })
+  }, [workspace])
+
   const refreshTasks = useCallback(() => void api.work.taskList().then(setTasks), [])
   useEffect(() => {
     refreshTasks()
   }, [refreshTasks, workspace])
 
-  // 由 id 派生当前项目：workspace 刷新（wiki/日报增删）后自动拿到最新 wikiFiles/reportFiles
+  // 由 id 派生当前项目：workspace 刷新后自动拿到最新 wikiFiles/reportFiles
   const project = useMemo(() => {
     if (!workspace) return null
     return workspace.projects.find((p) => p.id === projectId) ?? workspace.projects[0] ?? null
@@ -77,9 +106,9 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
         title="还没有项目"
         desc={
           <>
-            项目 = Wiki（知识库）+ 日报（每周一个 Markdown 文件）+ 任务（Markdown 文件存储）。
+            项目 = Wiki（知识库）+ 任务（tasks.md 的 markdown checkbox）+ 日报（每周一个 Markdown 文件）。
             <br />
-            目录结构：projects/&lt;名称&gt;/{`{project.json, wiki/, reports/, tasks/}`}
+            目录结构：projects/&lt;名称&gt;/{`{project.json, wiki/, reports/, tasks.md}`}
           </>
         }
         actions={
@@ -99,8 +128,19 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
 
   const selectProject = (p: Project) => {
     setProjectId(p.id)
+    setView('overview')
     setWikiFile(p.wikiFiles[0] ?? '')
-    setReportFile('')
+  }
+
+  const selectSection = (p: Project, key: SubView) => {
+    setProjectId(p.id)
+    setView(key)
+    if (key === 'wiki') {
+      setWikiFile((f) => f || (p.wikiFiles[0] ?? ''))
+      setExpanded((prev) => new Set(prev).add(`s:${p.id}:wiki`))
+    } else if (key === 'reports') {
+      setExpanded((prev) => new Set(prev).add(`s:${p.id}:reports`))
+    }
   }
 
   const newProject = async () => {
@@ -135,8 +175,6 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
     }
   }
 
-  const projectTasks = project ? tasks.filter((t) => t.project === project.id) : []
-
   return (
     <div className="workbench">
       {sidebarOpen && (
@@ -148,84 +186,116 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
                 +
               </button>
             </div>
-            {workspace.projects.map((p) => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center' }}>
-                <div
-                  className={`proj-item${project?.id === p.id ? ' active' : ''}`}
-                  style={{ flex: 1, minWidth: 0 }}
-                  onClick={() => selectProject(p)}
-                >
-                  <span className="proj-dot" style={{ background: p.color }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
-                    {tasks.filter((t) => t.project === p.id).length}
-                  </span>
-                </div>
-                {project?.id === p.id && (
-                  <span style={{ display: 'flex', flexShrink: 0 }}>
-                    <button className="ft-btn" style={{ width: 20, height: 20, fontSize: 10 }} title="重命名" onClick={() => void renameProject(p)}>
-                      ✎
-                    </button>
-                    <button className="ft-btn" style={{ width: 20, height: 20, fontSize: 10 }} title="删除" onClick={() => void deleteProject(p)}>
-                      🗑
-                    </button>
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {project && view === 'wiki' && (
-            <div className="sidebar-section">
-              <div className="sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                Wiki 文件
-                <button
-                  className="small"
-                  title="新建页面（可用 文件夹/名.md 建到子目录）"
-                  onClick={() => {
-                    const f = prompt('新页面文件（可用 文件夹/名.md）')
-                    if (f) void wikiOp(() => api.work.wikiCreate(project.id, f, f.replace(/\.md$/, '').split('/').pop() ?? f))
-                  }}
-                >
-                  +
-                </button>
-              </div>
-              {project.wikiFiles.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 6px' }}>暂无页面，点「+」新建</div>
-              ) : (
-                <WikiTree
-                  nodes={buildWikiTree(project.wikiFiles)}
-                  depth={0}
-                  collapsed={collapsed}
-                  toggle={toggleCollapsed}
-                  wikiFile={wikiFile}
-                  onSelect={setWikiFile}
-                  onRename={(path) => {
-                    const nf = prompt('新文件名（可含 文件夹/ 前缀移动）', path)
-                    if (nf && nf !== path) void wikiOp(() => api.work.wikiRename(project.id, path, nf)).then(() => setWikiFile(nf.endsWith('.md') ? nf : `${nf}.md`))
-                  }}
-                  onDelete={(path) => {
-                    if (confirm(`删除 wiki 页面「${path}」？`)) void wikiOp(() => api.work.wikiDelete(project.id, path)).then(() => setWikiFile(''))
-                  }}
-                />
-              )}
-            </div>
-          )}
-
-          {project && view === 'reports' && (
-            <div className="sidebar-section">
-              <div className="sidebar-title">工作日报（按周）</div>
-              {project.reportFiles.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 6px' }}>本周文件已自动创建，开始写日报吧</div>
-              ) : (
-                project.reportFiles.map((f) => (
-                  <div key={f} className={`wiki-file${reportFile === f ? ' active' : ''}`} onClick={() => setReportFile(f)}>
-                    {f}
+            {workspace.projects.map((p) => {
+              const pExpanded = expanded.has(`p:${p.id}`)
+              const wikiExpanded = expanded.has(`s:${p.id}:wiki`)
+              const reportsExpanded = expanded.has(`s:${p.id}:reports`)
+              const isActive = project?.id === p.id
+              return (
+                <div key={p.id}>
+                  <div
+                    className={`tree-item${isActive ? ' active' : ''}`}
+                    onClick={() => selectProject(p)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <span
+                      className="wiki-caret"
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleExpand(`p:${p.id}`)
+                      }}
+                    >
+                      {pExpanded ? '▾' : '▸'}
+                    </span>
+                    <span className="proj-dot" style={{ background: p.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tasks.filter((t) => t.project === p.id).length}</span>
+                    {isActive && (
+                      <span style={{ display: 'flex', flexShrink: 0 }}>
+                        <button className="ft-btn" style={{ width: 20, height: 20, fontSize: 10 }} title="重命名" onClick={(e) => { e.stopPropagation(); void renameProject(p) }}>
+                          ✎
+                        </button>
+                        <button className="ft-btn" style={{ width: 20, height: 20, fontSize: 10 }} title="删除" onClick={(e) => { e.stopPropagation(); void deleteProject(p) }}>
+                          🗑
+                        </button>
+                      </span>
+                    )}
                   </div>
-                ))
-              )}
-            </div>
-          )}
+                  {pExpanded && (
+                    <div style={{ paddingLeft: 12 }}>
+                      {SECTIONS.map((s) => (
+                        <div key={s.key}>
+                          <div
+                            className={`tree-item${isActive && view === s.key ? ' active' : ''}`}
+                            onClick={() => selectSection(p, s.key)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            {s.key === 'wiki' && p.wikiFiles.length > 0 && (
+                              <span
+                                className="wiki-caret"
+                                style={{ cursor: 'pointer' }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleExpand(`s:${p.id}:wiki`)
+                                }}
+                              >
+                                {wikiExpanded ? '▾' : '▸'}
+                              </span>
+                            )}
+                            {s.key !== 'wiki' && <span className="wiki-caret" />}
+                            <span>{s.label}</span>
+                          </div>
+                          {s.key === 'wiki' && wikiExpanded && p.wikiFiles.length > 0 && (
+                            <div style={{ paddingLeft: 10 }}>
+                              <WikiTree
+                                nodes={buildWikiTree(p.wikiFiles)}
+                                depth={0}
+                                collapsed={collapsed}
+                                toggle={toggleCollapsed}
+                                wikiFile={isActive ? wikiFile : ''}
+                                onSelect={(path) => {
+                                  setProjectId(p.id)
+                                  setWikiFile(path)
+                                  setView('wiki')
+                                }}
+                                onRename={(path) => {
+                                  const nf = prompt('新文件名（可含 文件夹/ 前缀移动）', path)
+                                  if (nf && nf !== path) void wikiOp(() => api.work.wikiRename(p.id, path, nf)).then(() => setWikiFile(nf.endsWith('.md') ? nf : `${nf}.md`))
+                                }}
+                                onDelete={(path) => {
+                                  if (confirm(`删除 wiki 页面「${path}」？`)) void wikiOp(() => api.work.wikiDelete(p.id, path)).then(() => setWikiFile(''))
+                                }}
+                              />
+                            </div>
+                          )}
+                          {s.key === 'reports' && reportsExpanded && p.reportFiles.length > 0 && (
+                            <div style={{ paddingLeft: 18 }}>
+                              {p.reportFiles.map((f) => (
+                                <div
+                                  key={f}
+                                  className={`wiki-file${isActive && reportFile === f ? ' active' : ''}`}
+                                  onClick={() => {
+                                    setProjectId(p.id)
+                                    setReportFile(f)
+                                    setView('reports')
+                                  }}
+                                >
+                                  {f}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </aside>
       )}
 
@@ -234,34 +304,38 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
           <button className="ft-btn et-icon" title="侧栏开关" onClick={() => setSidebarOpen(!sidebarOpen)}>
             ☰
           </button>
-          <strong>{project?.name}</strong>
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{project?.description}</span>
+          <strong>{view === 'all' ? '全部任务' : (project?.name ?? '')}</strong>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{view === 'all' ? '跨项目任务看板' : project?.description}</span>
           <span className="spacer" />
           <div className="view-tabs">
-            <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>
-              ✅ 任务管理
+            <button className={view === 'all' ? 'active' : ''} onClick={() => setView('all')}>
+              🗂 全部任务
             </button>
-            <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
-              📋 看板
-            </button>
-            <button className={view === 'wiki' ? 'active' : ''} onClick={() => setView('wiki')}>
-              📄 Wiki
-            </button>
-            <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')}>
-              📝 日报
-            </button>
+            {project && (
+              <>
+                <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>
+                  概览
+                </button>
+                <button className={view === 'wiki' ? 'active' : ''} onClick={() => setView('wiki')}>
+                  📄 Wiki
+                </button>
+                <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>
+                  ✅ 任务
+                </button>
+                <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')}>
+                  📝 日报
+                </button>
+              </>
+            )}
           </div>
         </div>
-        {project && view === 'tasks' && (
-          <TaskManagePage tasks={projectTasks} project={project} allProjects={workspace.projects} onMutated={refreshTasks} />
+        {view === 'all' && <AllTasksView projects={workspace.projects} />}
+        {project && view === 'overview' && (
+          <TaskOverview project={project} wikiFile={wikiFile} onOpenWiki={() => setView('wiki')} onOpenTasks={() => setView('tasks')} />
         )}
-        {project && view === 'kanban' && (
-          <KanbanView project={project} tasks={projectTasks} onMutated={refreshTasks} />
-        )}
+        {project && view === 'tasks' && <ProjectTasksView project={project} />}
         {project && view === 'wiki' && <WikiPane project={project} file={wikiFile} />}
-        {project && view === 'reports' && (
-          <ReportsPane project={project} file={reportFile} onFile={setReportFile} />
-        )}
+        {project && view === 'reports' && <ReportsPane project={project} file={reportFile} onFile={setReportFile} />}
       </section>
     </div>
   )

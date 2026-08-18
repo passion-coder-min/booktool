@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { WorkspaceInfo, LoadedBook } from '@booktool/shared'
+import type { WorkspaceInfo, LoadedBook, BookSearchAllMatch } from '@booktool/shared'
 import { api } from '../api'
 import { join } from '../path'
 import EmptyCard from '../components/EmptyCard'
@@ -11,14 +11,31 @@ interface Props {
   onOpenBook: (dir: string, name: string) => void
   /** 打开单个 markdown 文件（独立编辑模式） */
   onOpenSingleFile: (file: SingleFile) => void
+  /** 跨书搜索命中 → 打开对应书并跳到章节行 */
+  onOpenMatch?: (m: BookSearchAllMatch) => void
 }
 
-/** 书籍管理页（出版活动第一级）：卡片网格 + CRUD + 版本管理 + 打开目录/单个文件 */
-export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpenSingleFile }: Props) {
+/** 书籍管理页（出版活动第一级）：卡片网格 + CRUD + 版本管理 + 打开目录/单个文件 + 跨书搜索 */
+export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpenSingleFile, onOpenMatch }: Props) {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [versioning, setVersioning] = useState<{ dir: string; name: string } | null>(null)
   const [error, setError] = useState('')
+  const [searchQ, setSearchQ] = useState('')
+  const [matches, setMatches] = useState<BookSearchAllMatch[] | null>(null)
+
+  // 跨书全文搜索（300ms 防抖）
+  useEffect(() => {
+    const q = searchQ.trim()
+    if (!q) {
+      setMatches(null)
+      return
+    }
+    const t = setTimeout(() => {
+      void api.book.searchAll(q).then(setMatches).catch((e) => setError(String(e)))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQ])
 
   const guard = async (fn: () => Promise<unknown>) => {
     try {
@@ -126,6 +143,13 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
     <div style={{ flex: 1, overflowY: 'auto', padding: '20px 26px' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 8 }}>
         <h2 style={{ fontSize: 16 }}>我的书籍（{workspace.books.length + workspace.externalBooks.length}）</h2>
+        <input
+          type="text"
+          placeholder="🔍 全部书籍全文搜索…"
+          value={searchQ}
+          onChange={(e) => setSearchQ(e.target.value)}
+          style={{ width: 240, marginLeft: 10 }}
+        />
         <span style={{ flex: 1 }} />
         <button className="ghost" onClick={() => void openDirectory()} title="导入现有 mdBook 项目目录（原位置引用）">
           📂 打开目录
@@ -138,6 +162,25 @@ export default function BookManagePage({ workspace, onChanged, onOpenBook, onOpe
         </button>
       </div>
       {error && <div style={{ color: 'var(--danger)', marginBottom: 10, fontSize: 13 }}>⚠ {error}</div>}
+
+      {matches !== null && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="sidebar-title" style={{ padding: '0 0 6px' }}>
+            搜索「{searchQ.trim()}」命中 {matches.length} 条{matches.length >= 500 ? '（已达上限）' : ''}
+          </div>
+          <div className="search-results" style={{ maxHeight: 260 }}>
+            {matches.length === 0 && <div className="search-empty">无结果</div>}
+            {matches.map((m, i) => (
+              <div key={i} className="search-item" onClick={() => onOpenMatch?.(m)}>
+                <span className="search-file">
+                  {m.bookName} · {m.file}:{m.line}
+                </span>
+                <span className="search-text">{m.text.trim()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="book-grid">
         {workspace.books.map((name) => (

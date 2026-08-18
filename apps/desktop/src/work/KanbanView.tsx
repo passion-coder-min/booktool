@@ -1,13 +1,25 @@
-import { useState } from 'react'
-import { DndContext, DragEndEvent, useDraggable, useDroppable } from '@dnd-kit/core'
-import type { Project, Task, TaskStatus } from '@booktool/shared'
+import { DndContext, DragEndEvent, useDraggable, useDroppable, useSensor, useSensors, PointerSensor } from '@dnd-kit/core'
+import type { Project, Task, TaskPriority, TaskStatus } from '@booktool/shared'
 import { api } from '../api'
+import { usePaged } from './usePaged'
+import { LoadMore } from './LoadMore'
 
-const COLUMNS: { key: TaskStatus; label: string }[] = [
+export const COLUMNS: { key: TaskStatus; label: string }[] = [
   { key: 'todo', label: '待办' },
   { key: 'doing', label: '进行中' },
+  { key: 'blocked', label: '阻塞' },
   { key: 'done', label: '已完成' },
 ]
+
+export const STATUS_LABEL: Record<TaskStatus, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成' }
+
+/** 紧急程度色（卡片右边 3px） */
+export const PRIORITY_COLOR: Record<TaskPriority, string> = {
+  low: '#8a94a3',
+  normal: '#3d8bfd',
+  high: '#e08030',
+  urgent: '#d94a4a',
+}
 
 export const isOverdue = (t: Task) =>
   t.status !== 'done' && t.due !== null && t.due < todayStr()
@@ -21,25 +33,14 @@ interface Props {
   project: Project
   tasks: Task[]
   onMutated: () => void
+  /** 点卡片打开详情/编辑 */
+  onOpen?: (task: Task) => void
 }
 
-export default function KanbanView({ project, tasks, onMutated }: Props) {
-  const [title, setTitle] = useState('')
-  const [due, setDue] = useState('')
-  const [priority, setPriority] = useState('normal')
-
-  const add = async () => {
-    if (!title.trim()) return
-    await api.work.taskCreate({
-      title: title.trim(),
-      project: project.id,
-      priority: priority as Task['priority'],
-      due: due || null,
-      scheduled: null,
-    })
-    setTitle('')
-    onMutated()
-  }
+/** 项目任务看板：四列拖拽改状态（列内分页懒加载）；添加统一走清单 checkbox，此处不提供表单 */
+export default function KanbanView({ project, tasks, onMutated, onOpen }: Props) {
+  // 拖拽需移动 4px 才激活，单击留给"点开详情"
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
   const onDragEnd = async (e: DragEndEvent) => {
     const overId = String(e.over?.id ?? '')
@@ -52,68 +53,67 @@ export default function KanbanView({ project, tasks, onMutated }: Props) {
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <div className="quick-add">
-        <input
-          type="text"
-          placeholder="新任务标题，回车添加"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-        />
-        <input type="date" value={due} onChange={(e) => setDue(e.target.value)} title="截止日" />
-        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-          <option value="low">低</option>
-          <option value="normal">普通</option>
-          <option value="high">高</option>
-          <option value="urgent">紧急</option>
-        </select>
-        <button className="primary" onClick={add}>
-          添加
-        </button>
-      </div>
-      <DndContext onDragEnd={onDragEnd}>
+    <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div className="kanban">
-          {COLUMNS.map((col) => {
-            const list = tasks.filter((t) => t.status === col.key)
-            return (
-              <Column key={col.key} colKey={col.key} label={col.label} count={list.length}>
-                {list.map((t) => (
-                  <TaskCard key={t.id} task={t} onDeleted={onMutated} />
-                ))}
-              </Column>
-            )
-          })}
+          {COLUMNS.map((col) => (
+            <PagedColumn
+              key={col.key}
+              colKey={col.key}
+              label={col.label}
+              tasks={tasks.filter((t) => t.status === col.key)}
+              renderCard={(t) => (
+                <TaskCard key={t.id} task={t} projectColor={project.color} onDeleted={onMutated} onOpen={onOpen} />
+              )}
+            />
+          ))}
         </div>
       </DndContext>
     </div>
   )
 }
 
-function Column({
+/** 看板列：droppable + 分页渲染（大量任务时不一次性铺满 DOM） */
+export function PagedColumn({
   colKey,
   label,
-  count,
-  children,
+  tasks,
+  renderCard,
 }: {
   colKey: TaskStatus
   label: string
-  count: number
-  children: React.ReactNode
+  tasks: Task[]
+  renderCard: (t: Task) => React.ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${colKey}` })
+  const { visible, remaining, loadMore } = usePaged(tasks)
   return (
     <div className={`kanban-col${isOver ? ' drag-over' : ''}`} ref={setNodeRef}>
       <div className="kanban-col-title">
         <span>{label}</span>
-        <span>{count}</span>
+        <span>{tasks.length}</span>
       </div>
-      {children}
+      {visible.map(renderCard)}
+      <LoadMore remaining={remaining} onClick={loadMore} />
     </div>
   )
 }
 
-export function TaskCard({ task, onDeleted }: { task: Task; onDeleted: () => void }) {
+/** 可拖拽任务卡：左边 3px = 项目色，右边 3px = 紧急色，重要任务标 ★；点卡片打开详情/编辑 */
+export function TaskCard({
+  task,
+  projectColor,
+  projectName,
+  onDeleted,
+  onOpen,
+}: {
+  task: Task
+  projectColor: string
+  /** 跨项目视图（全局看板）显示项目名；单项目视图省略 */
+  projectName?: string
+  onDeleted: () => void
+  onOpen?: (task: Task) => void
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id })
   const del = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -122,15 +122,30 @@ export function TaskCard({ task, onDeleted }: { task: Task; onDeleted: () => voi
       onDeleted()
     }
   }
+  const cardStyle: React.CSSProperties = {
+    boxShadow: `inset 3px 0 0 ${projectColor}, inset -3px 0 0 ${PRIORITY_COLOR[task.priority]}, var(--shadow)`,
+  }
   return (
     <div
       className={`task-card${isDragging ? ' dragging' : ''}`}
+      style={cardStyle}
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      title="拖拽移动；点击编辑详情"
+      onClick={() => onOpen?.(task)}
     >
-      <div className="t-title">{task.title}</div>
+      <div className="t-title">
+        {task.importance && <span style={{ color: '#e0a030', marginRight: 4 }}>★</span>}
+        {task.title}
+      </div>
       <div className="t-meta">
+        {projectName && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span className="proj-dot" style={{ background: projectColor, width: 8, height: 8 }} />
+            {projectName}
+          </span>
+        )}
         <span className={`badge ${task.priority}`}>
           {{ low: '低', normal: '普通', high: '高', urgent: '紧急' }[task.priority]}
         </span>
@@ -146,7 +161,6 @@ export function TaskCard({ task, onDeleted }: { task: Task; onDeleted: () => voi
             {tag}
           </span>
         ))}
-        {task.links.length > 0 && <span title={task.links.join(', ')}>🔗</span>}
         <button className="t-del" onClick={del} title="删除">
           ✕
         </button>

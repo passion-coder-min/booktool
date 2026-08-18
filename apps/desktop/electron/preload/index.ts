@@ -31,6 +31,7 @@ const api = {
       ipcRenderer.invoke(IPC.bookCompile, dir, opts),
     openPdf: (dir: string, pdfPath?: string) => ipcRenderer.invoke(IPC.bookOpenPdf, dir, pdfPath),
     search: (dir: string, query: string) => ipcRenderer.invoke(IPC.bookSearch, dir, query),
+    searchAll: (query: string) => ipcRenderer.invoke(IPC.bookSearchAll, query),
     openDirectory: () => ipcRenderer.invoke(IPC.bookOpenDirectory),
     removeExternal: (dir: string) => ipcRenderer.invoke(IPC.bookRemoveExternal, dir),
   },
@@ -63,6 +64,8 @@ const api = {
     taskCreate: (input: unknown) => ipcRenderer.invoke(IPC.taskCreate, input),
     taskUpdate: (project: string, id: string, patch: unknown) => ipcRenderer.invoke(IPC.taskUpdate, project, id, patch),
     taskDelete: (project: string, id: string) => ipcRenderer.invoke(IPC.taskDelete, project, id),
+    taskChecklistRead: (project: string) => ipcRenderer.invoke(IPC.taskChecklistRead, project),
+    taskChecklistWrite: (project: string, content: string) => ipcRenderer.invoke(IPC.taskChecklistWrite, project, content),
   },
   onCompileStatus: (cb: (payload: unknown) => void) => {
     const listener = (_e: unknown, payload: unknown) => cb(payload)

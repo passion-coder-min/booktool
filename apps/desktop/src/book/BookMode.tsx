@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { WorkspaceInfo, LoadedBook, SummaryItem, CompileReport, Diagnostic, SearchMatch } from '@booktool/shared'
+import type { WorkspaceInfo, LoadedBook, SummaryItem, CompileReport, Diagnostic, SearchMatch, BookSearchAllMatch } from '@booktool/shared'
 import { api, fileUrl } from '../api'
 import { join } from '../path'
 import Editor from '../components/Editor'
@@ -103,6 +103,12 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
   const [live, setLive] = useState(false)
   const [compiling, setCompiling] = useState(false)
   const [status, setStatus] = useState('')
+  /** 编译中的实时阶段消息（编译器经 onCompileStatus 推送）与进度（done/total，可空） */
+  const [compilePhase, setCompilePhase] = useState('')
+  const [compileProgress, setCompileProgress] = useState<{ done: number; total: number } | null>(null)
+  /** 编译已耗时（ms），编译中定时刷新 */
+  const [compileElapsed, setCompileElapsed] = useState(0)
+  const compileStartRef = useRef(0)
   const [report, setReport] = useState<CompileReport | null>(null)
   const [pdfPath, setPdfPath] = useState<string | null>(null)
 
@@ -115,6 +121,8 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const pdfBlobUrlRef = useRef<string | null>(null)
   const [gotoLine, setGotoLine] = useState<{ line: number; nonce: number } | null>(null)
+  /** 跨书搜索命中后待跳转的章节与行 */
+  const [pendingJump, setPendingJump] = useState<{ file: string; line: number } | null>(null)
   const [diagOpen, setDiagOpen] = useState(false)
   const [diagIndex, setDiagIndex] = useState(-1)
   const [imgOpen, setImgOpen] = useState(false)
@@ -200,6 +208,10 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
     if (!s.bookDir) return null
     setCompiling(true)
     setStatus(outputName ? '实时编译 …' : '准备编译 …')
+    compileStartRef.current = Date.now()
+    setCompileElapsed(0)
+    setCompilePhase(outputName ? '实时编译 …' : '准备编译 …')
+    setCompileProgress(null)
     try {
       if (s.current && !s.saved) {
         await api.book.writeChapter(s.bookDir, s.current, s.doc)
@@ -237,6 +249,30 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
       setCompiling(false)
     }
   }, [])
+
+  // 订阅主进程编译进度：编译器经 compileDiagnostics 推送 { status, progress }，
+  // 实时更新状态栏/按钮的阶段与进度（完成时另推送 { report }，报告走 compile() 的 invoke 返回，忽略即可）
+  useEffect(
+    () =>
+      api.onCompileStatus((payload) => {
+        const p = payload as { status?: string; progress?: { done: number; total: number } }
+        if (typeof p?.status === 'string') {
+          setCompilePhase(p.status)
+          setCompileProgress(p.progress ?? null)
+        }
+      }),
+    [],
+  )
+
+  // 编译计时：开始记录起始时刻，编译中每 500ms 刷新已耗时
+  useEffect(() => {
+    if (!compiling) {
+      setCompileElapsed(0)
+      return
+    }
+    const id = setInterval(() => setCompileElapsed(Date.now() - compileStartRef.current), 500)
+    return () => clearInterval(id)
+  }, [compiling])
 
   // 编译完成后把 PDF 读入 Blob URL 供 iframe 预览。
   // 直接以 booktool-file 协议 URL 作为 iframe src 在部分环境（GPU/自定义协议）下 PDF 预览空白（黑框），
@@ -390,6 +426,20 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
     else jump()
   }, [openChapter, setEditorMode])
 
+  // 跨书搜索命中：先打开对应书，书加载完成后跳到章节行
+  const openSearchMatch = useCallback(
+    (m: BookSearchAllMatch) => {
+      openBook(m.bookDir, m.bookName)
+      setPendingJump({ file: m.file, line: m.line })
+    },
+    [openBook],
+  )
+  useEffect(() => {
+    if (view !== 'workspace' || !book || !pendingJump) return
+    setPendingJump(null)
+    gotoChapterLine(pendingJump.file, pendingJump.line)
+  }, [view, book, pendingJump, gotoChapterLine])
+
   const createNew = useCallback(() => {
     const s = stateRef.current
     const dir = s.bookDir
@@ -468,13 +518,16 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
           errors: diags.filter((d) => d.severity === 'error').length,
           ok: report?.ok ?? false,
           status,
+          phase: compilePhase,
+          progress: compileProgress,
+          elapsedMs: compileElapsed,
           pdfRel: pdfPath && bookDir ? (pdfPath.startsWith(bookDir) ? pdfPath.slice(bookDir.length + 1) : pdfPath) : null,
           pdfPath,
         }
       },
     })
     return () => onRegisterCommands(null)
-  }, [view, onRegisterCommands, report, compiling, status, pdfPath, bookDir, openPdfInApp, diagIndex, jumpToDiag, compile, createNew, editorMode, setEditorMode, setPreview, setLayout, setSidebarOpen])
+  }, [view, onRegisterCommands, report, compiling, status, compilePhase, compileProgress, compileElapsed, pdfPath, bookDir, openPdfInApp, diagIndex, jumpToDiag, compile, createNew, editorMode, setEditorMode, setPreview, setLayout, setSidebarOpen])
 
   const chapterDir = useMemo(() => {
     if (!bookDir || !current || !book) return ''
@@ -486,7 +539,7 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
 
   // -------- 第一级：书籍管理页 --------
   if (view === 'manage') {
-    return <BookManagePage workspace={workspace} onChanged={onChanged} onOpenBook={openBook} onOpenSingleFile={(f) => { setSingleFile(f); setView('single') }} />
+    return <BookManagePage workspace={workspace} onChanged={onChanged} onOpenBook={openBook} onOpenMatch={openSearchMatch} onOpenSingleFile={(f) => { setSingleFile(f); setView('single') }} />
   }
 
   // -------- 单文件编辑模式（不依赖书籍结构） --------
@@ -520,7 +573,7 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
             onClick={() => void compile()}
             title="保存并编译 PDF（Ctrl+S）"
           >
-            {compiling ? '⟳ 编译中…' : '编译 PDF'}
+            {compiling ? (compilePhase ? `⟳ ${compilePhase}` : '⟳ 编译中…') : '编译 PDF'}
           </button>
           <button
             className={`ft-btn et-icon diag-toggle${diags.length > 0 ? ' has-diag' : ''}`}

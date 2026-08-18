@@ -38,6 +38,7 @@ export interface Api {
     compile: (dir: string, opts?: { outputName?: string }) => Promise<import('@booktool/shared').CompileReport>
     openPdf: (dir: string, pdfPath?: string) => Promise<string | null>
     search: (dir: string, query: string) => Promise<import('@booktool/shared').SearchMatch[]>
+    searchAll: (query: string) => Promise<import('@booktool/shared').BookSearchAllMatch[]>
     openDirectory: () => Promise<import('@booktool/shared').WorkspaceInfo | null>
     removeExternal: (dir: string) => Promise<import('@booktool/shared').WorkspaceInfo>
   }
@@ -73,6 +74,8 @@ export interface Api {
       patch: unknown,
     ) => Promise<import('@booktool/shared').Task>
     taskDelete: (project: string, id: string) => Promise<boolean>
+    taskChecklistRead: (project: string) => Promise<{ dir: string; content: string }>
+    taskChecklistWrite: (project: string, content: string) => Promise<boolean>
   }
   onCompileStatus: (cb: (payload: unknown) => void) => () => void
   onMenuCmd: (cb: (cmd: string) => void) => () => void

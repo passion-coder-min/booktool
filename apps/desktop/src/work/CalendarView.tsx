@@ -78,16 +78,6 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask, onT
 
   const unscheduled = tasks.filter((t) => !t.scheduled)
 
-  // 被依赖阻塞的任务 id：存在依赖项未完成（或依赖缺失）即视为阻塞
-  const blockedIds = useMemo(() => {
-    const byId = new Map(tasks.map((t) => [t.id, t]))
-    const s = new Set<string>()
-    for (const t of tasks) {
-      if (t.dependencies.some((did) => { const d = byId.get(did); return !d || d.status !== 'done' })) s.add(t.id)
-    }
-    return s
-  }, [tasks])
-
   const shift = (dir: number) => {
     const d = new Date(anchor)
     if (mode === 'week') d.setDate(d.getDate() + 7 * dir)
@@ -146,7 +136,6 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask, onT
                 date={fmt(d)}
                 tasks={byDate.get(fmt(d)) ?? []}
                 today={fmt(d) === today}
-                blockedIds={blockedIds}
                 onAddTask={onAddTask}
                 onTaskEdit={onTaskEdit}
                 onTaskHover={onTaskHover}
@@ -155,7 +144,7 @@ export default function CalendarView({ project, tasks, onMutated, onAddTask, onT
             ))}
           </div>
         </div>
-        <Unscheduled tasks={unscheduled} blockedIds={blockedIds} onTaskEdit={onTaskEdit} onTaskHover={onTaskHover} onTaskLeave={onTaskLeave} />
+        <Unscheduled tasks={unscheduled} onTaskEdit={onTaskEdit} onTaskHover={onTaskHover} onTaskLeave={onTaskLeave} />
       </DndContext>
     </div>
   )
@@ -165,7 +154,6 @@ function DayCell({
   date,
   tasks,
   today,
-  blockedIds,
   onAddTask,
   onTaskEdit,
   onTaskHover,
@@ -174,7 +162,6 @@ function DayCell({
   date: string
   tasks: Task[]
   today: boolean
-  blockedIds: Set<string>
   onAddTask?: (date: string) => void
   onTaskEdit?: (task: Task) => void
   onTaskHover?: (task: Task, x: number, y: number) => void
@@ -192,7 +179,7 @@ function DayCell({
     >
       <div className="cal-date">{Number(date.slice(8))}</div>
       {tasks.map((t) => (
-        <DraggableCalTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
+        <DraggableCalTask key={t.id} task={t} blocked={t.status === 'blocked'} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
       ))}
     </div>
   )
@@ -220,7 +207,7 @@ function DraggableCalTask({
       {...attributes}
       {...listeners}
       className={`cal-task${task.status === 'done' ? ' done' : ''}${overdue ? ' overdue' : ''}${blocked ? ' blocked' : ''}`}
-      title={`${task.title}${task.due ? `\n截止 ${task.due}` : ''}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
+      title={`${task.title}${task.due ? `\n截止 ${task.due}` : ''}${blocked ? '\n⛔ 阻塞' : ''}`}
       style={isDragging ? { opacity: 0.5 } : undefined}
       onMouseEnter={(e) => onHover?.(task, e.clientX, e.clientY)}
       onMouseLeave={onLeave}
@@ -238,13 +225,11 @@ function DraggableCalTask({
 
 function Unscheduled({
   tasks,
-  blockedIds,
   onTaskEdit,
   onTaskHover,
   onTaskLeave,
 }: {
   tasks: Task[]
-  blockedIds: Set<string>
   onTaskEdit?: (task: Task) => void
   onTaskHover?: (task: Task, x: number, y: number) => void
   onTaskLeave?: () => void
@@ -257,7 +242,7 @@ function Unscheduled({
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {tasks.map((t) => (
-          <CompactTask key={t.id} task={t} blocked={blockedIds.has(t.id)} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
+          <CompactTask key={t.id} task={t} blocked={t.status === 'blocked'} onEdit={onTaskEdit} onHover={onTaskHover} onLeave={onTaskLeave} />
         ))}
       </div>
       <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
@@ -288,7 +273,7 @@ function CompactTask({
       {...listeners}
       className={`cal-task${task.status === 'done' ? ' done' : ''}${blocked ? ' blocked' : ''}`}
       style={{ whiteSpace: 'normal' }}
-      title={`${task.title}${blocked ? '\n⛔ 被依赖阻塞' : ''}`}
+      title={`${task.title}${blocked ? '\n⛔ 阻塞' : ''}`}
       onMouseEnter={(e) => onHover?.(task, e.clientX, e.clientY)}
       onMouseLeave={onLeave}
       onDoubleClick={(e) => {

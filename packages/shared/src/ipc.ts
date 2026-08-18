@@ -30,6 +30,8 @@ export const IPC = {
   bookReadAsset: 'book:read-asset',
   bookOpenPdf: 'book:open-pdf',
   bookSearch: 'book:search',
+  /** 跨书籍全文搜索（工作区全部书籍） */
+  bookSearchAll: 'book:search-all',
   /** 打开外部目录（mdBook 兼容书籍）并注册 */
   bookOpenDirectory: 'book:open-directory',
   /** 从工作区移除外部书籍（仅移除引用，不删目录） */
@@ -64,6 +66,9 @@ export const IPC = {
   taskCreate: 'task:create',
   taskUpdate: 'task:update',
   taskDelete: 'task:delete',
+  /** 项目任务清单原文（tasks.md，markdown checkbox 编辑） */
+  taskChecklistRead: 'task:checklist-read',
+  taskChecklistWrite: 'task:checklist-write',
 
   // 推送（主 → 渲染）
   compileDiagnostics: 'compile:diagnostics',

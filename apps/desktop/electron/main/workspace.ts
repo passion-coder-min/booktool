@@ -2,6 +2,7 @@ import { app, dialog } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import type { WorkspaceInfo, Project, ProjectMeta } from '@booktool/shared'
+import { countProjectTasks } from './tasks'
 
 interface ExternalBookRef {
   name: string
@@ -107,9 +108,7 @@ export function scanWorkspace(): WorkspaceInfo {
       const wikiDir = join(dir, 'wiki')
       const wikiFiles = listMd(wikiDir)
       const reportFiles = listMd(join(dir, 'reports'))
-      const taskCount = existsSync(join(dir, 'tasks'))
-        ? readdirSync(join(dir, 'tasks')).filter((f) => f.endsWith('.md')).length
-        : 0
+      const taskCount = countProjectTasks(projectsRoot, d.name)
       projects.push({ ...meta, dir, wikiFiles, reportFiles, taskCount })
     }
   }

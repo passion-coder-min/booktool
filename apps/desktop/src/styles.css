@@ -209,6 +209,11 @@ body {
   border-radius: 4px; padding: 1px 8px; font-size: 11.5px; line-height: 1.6; cursor: pointer;
 }
 .statusbar .sb-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
+.statusbar .sb-progress {
+  display: inline-block; width: 72px; height: 4px; margin-left: 6px;
+  background: rgba(255,255,255,0.14); border-radius: 2px; overflow: hidden; vertical-align: middle;
+}
+.statusbar .sb-progress-fill { display: block; height: 100%; background: var(--accent, #3d8bfd); border-radius: 2px; transition: width 0.3s ease; }
 
 /* ---------- 通用控件 ---------- */
 button.primary { padding: 5px 14px; border: none; background: var(--accent); color: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
@@ -422,6 +427,24 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .kanban-col { flex: 1; min-width: 230px; background: var(--panel-2); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
 .kanban-col.drag-over { outline: 2px dashed var(--accent); background: var(--accent-weak); }
 .kanban-col-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+/* 四象限（重要 × 紧急） */
+.quadrant {
+  flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  gap: 12px; min-height: 0;
+}
+.quad-cell {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.quad-cell.hot { border-color: var(--warn); }
+.quad-cell.drag-over { outline: 2px dashed var(--accent); background: var(--accent-weak); }
+.quad-cell-title {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 10px; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0;
+}
+.quad-cell-count { font-weight: 400; }
+.quad-cell-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .task-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; cursor: grab; box-shadow: var(--shadow); }
 .task-card.dragging { opacity: 0.5; }
 .task-card .t-title { font-size: 13px; margin-bottom: 6px; color: var(--text); }

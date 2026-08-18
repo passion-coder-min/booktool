@@ -1,7 +1,7 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import { join, dirname, extname, basename, relative } from 'node:path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, copyFileSync } from 'node:fs'
-import { IPC, type CompileReport, type LoadedBook, type SearchMatch, type Task, type WorkspaceInfo } from '@booktool/shared'
+import { IPC, type CompileReport, type LoadedBook, type SearchMatch, type BookSearchAllMatch, type Task, type WorkspaceInfo } from '@booktool/shared'
 import { getWorkspaceRoot, chooseWorkspaceRoot, scanWorkspace, chooseExternalBook, removeExternalBook, hideBook, unhideBook } from './workspace'
 import {
   loadBook, readChapter, readChapterSafe, writeChapter, resolveAsset, atomicWrite,
@@ -9,7 +9,7 @@ import {
   chapterCreate, chapterRename, chapterDelete, chapterMove,
 } from './books'
 import { compileBook, pdfPathOf, compileSingleFile } from './compiler'
-import { listTasks, createTask, updateTask, deleteTask, type TaskInput } from './tasks'
+import { listTasks, createTask, updateTask, deleteTask, readProjectChecklist, writeChecklist, type TaskInput } from './tasks'
 import { ensureWeek, addToday, readReport, writeReport } from './reports'
 import { readConfig, writeConfig } from './config'
 
@@ -86,7 +86,7 @@ export function registerIpc() {
   )
   ipcMain.handle(IPC.bookCompile, async (_e, bookDir: string, opts?: { outputName?: string }): Promise<CompileReport> => {
     try {
-      const report = await compileBook(bookDir, (msg) => send(IPC.compileDiagnostics, { status: msg }), opts)
+      const report = await compileBook(bookDir, (msg, progress) => send(IPC.compileDiagnostics, { status: msg, progress }), opts)
       send(IPC.compileDiagnostics, { report })
       return report
     } catch (err) {
@@ -148,7 +148,7 @@ export function registerIpc() {
       const res = await dialog.showSaveDialog({ defaultPath: def, filters: [{ name: 'PDF', extensions: ['pdf'] }] })
       if (res.canceled || !res.filePath) return null
       try {
-        const report = await compileSingleFile(fileAbs, res.filePath, (msg) => send(IPC.compileDiagnostics, { status: msg }))
+        const report = await compileSingleFile(fileAbs, res.filePath, (msg, progress) => send(IPC.compileDiagnostics, { status: msg, progress }))
         send(IPC.compileDiagnostics, { report })
         return report
       } catch (err) {
@@ -179,6 +179,38 @@ export function registerIpc() {
           out.push({ file: ch.path, line: idx + 1, text })
         }
       })
+    }
+    return out
+  })
+
+  // 跨书籍全文搜索（工作区内置 + 外部书籍），结果封顶防止大书库拖垮 IPC
+  ipcMain.handle(IPC.bookSearchAll, (_e, query: string): BookSearchAllMatch[] => {
+    const q = (query || '').trim().toLowerCase()
+    if (!q) return []
+    const root = getWorkspaceRoot()
+    const ws = scanWorkspace()
+    const all = [
+      ...ws.books.map((n) => ({ dir: join(root, 'books', n), name: n })),
+      ...ws.externalBooks.map((b) => ({ dir: b.dir, name: b.name })),
+    ]
+    const LIMIT = 500
+    const out: BookSearchAllMatch[] = []
+    for (const { dir, name } of all) {
+      try {
+        const book = loadBook(dir)
+        for (const ch of book.chapters) {
+          const md = readChapter(dir, book.config.srcDir, ch.path)
+          md.split(/\r?\n/).forEach((text, idx) => {
+            if (out.length < LIMIT && text.toLowerCase().includes(q)) {
+              out.push({ bookDir: dir, bookName: name, file: ch.path, line: idx + 1, text })
+            }
+          })
+          if (out.length >= LIMIT) break
+        }
+      } catch {
+        // 单本书损坏/缺失不阻塞整体搜索
+      }
+      if (out.length >= LIMIT) break
     }
     return out
   })
@@ -347,6 +379,16 @@ export function registerIpc() {
   ipcMain.handle(IPC.taskDelete, (_e, project: string, id: string) => {
     const root = getWorkspaceRoot()
     deleteTask(join(root, 'projects'), project, id)
+    return true
+  })
+  ipcMain.handle(IPC.taskChecklistRead, (_e, project: string) => {
+    const root = getWorkspaceRoot()
+    const content = readProjectChecklist(join(root, 'projects'), project)
+    return { dir: join(root, 'projects', project), content }
+  })
+  ipcMain.handle(IPC.taskChecklistWrite, (_e, project: string, content: string) => {
+    const root = getWorkspaceRoot()
+    writeChecklist(join(root, 'projects'), project, content)
     return true
   })
 

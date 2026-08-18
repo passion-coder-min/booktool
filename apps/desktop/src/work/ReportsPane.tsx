@@ -6,6 +6,7 @@ import MarkdownPreview from '../components/MarkdownPreview'
 import FormatToolbar from '../components/FormatToolbar'
 import { EditorCtx } from '../edit/EditorContext'
 import type { EditorHandle } from '../edit/formatCommands'
+import { todayStr } from './KanbanView'
 
 interface Props {
   project: Project
@@ -73,6 +74,46 @@ export default function ReportsPane({ project, file, onFile }: Props) {
 
   const baseDir = useMemo(() => `${project.dir}/reports`, [project.dir])
 
+  /** 导出 PDF：周报 = 当前周整份文件；日报 = 仅今日小节（临时 md，复用单文件编译管线） */
+  const [exporting, setExporting] = useState(false)
+  const exportPdf = async (scope: 'week' | 'today') => {
+    if (exporting) return
+    setExporting(true)
+    try {
+      // 先落盘当前草稿，导出读的是文件
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+      await api.work.reportWrite(project.id, file, doc)
+      let abs = `${project.dir}/reports/${file}`
+      if (scope === 'today') {
+        const heading = `## ${todayStr()}`
+        const lines = doc.split('\n')
+        const start = lines.findIndex((l) => l.startsWith(heading))
+        if (start < 0) {
+          alert(`今日小节（${heading}）不存在，可先点「＋ 今日日报」生成`)
+          return
+        }
+        let end = lines.length
+        for (let i = start + 1; i < lines.length; i++) {
+          if (lines[i]!.startsWith('## ')) {
+            end = i
+            break
+          }
+        }
+        const section = `# 工作日报 ${todayStr()}\n\n` + lines.slice(start, end).join('\n').trim() + '\n'
+        const name = '.today-export.md'
+        await api.work.reportWrite(project.id, name, section)
+        abs = `${project.dir}/reports/${name}`
+      }
+      const report = await api.file.compile(abs)
+      if (report?.ok && report.pdfPath) void api.book.openPdf(project.dir, report.pdfPath)
+    } catch (e) {
+      alert('导出失败：' + String(e))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (!file) {
     return <div className="preview" style={{ color: 'var(--muted)' }}>该项目还没有日报文件</div>
   }
@@ -87,6 +128,12 @@ export default function ReportsPane({ project, file, onFile }: Props) {
             </span>
             <span className={`save-state${saved ? '' : ' dirty'}`}>{saved ? '✓ 已保存' : '● 保存中…'}</span>
             <span className="spacer" />
+            <button className="small" disabled={exporting} onClick={() => void exportPdf('today')} title="导出今日小节为 PDF">
+              {exporting ? '⟳ 导出中…' : '⬇ 今日 PDF'}
+            </button>
+            <button className="small" disabled={exporting} onClick={() => void exportPdf('week')} title="导出当前周整份日报为 PDF">
+              {exporting ? '⟳ 导出中…' : '⬇ 周报 PDF'}
+            </button>
             <button className="small" onClick={() => void addToday()} title="在当前周日报末尾新增今天（## 日期 周X）章节">
               ＋ 今日日报
             </button>

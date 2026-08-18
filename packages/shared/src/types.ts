@@ -33,24 +33,26 @@ export interface LoadedBook {
 }
 
 /** 任务状态 */
-export type TaskStatus = 'todo' | 'doing' | 'done'
+export type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done'
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent'
 
-/** 任务（tasks/*.md 的 frontmatter） */
+/** 任务（新模型：tasks.md 的 markdown checkbox 行；旧模型 tasks/*.md frontmatter 迁移而来） */
 export interface Task {
   id: string
   title: string
   project: string
   status: TaskStatus
   priority: TaskPriority
+  /** 是否重要（四象限 Y 轴；行内 `(重要)` 标记） */
+  importance: boolean
   /** 截止日 YYYY-MM-DD */
   due: string | null
   /** 计划日（日历落格依据）YYYY-MM-DD */
   scheduled: string | null
   tags: string[]
-  /** 关联的 wiki 页面（相对项目根） */
+  /** 关联的 wiki 页面（相对项目根）——新 checkbox 模型不使用，保留兼容旧数据 */
   links: string[]
-  /** 依赖的任务 id（被依赖方未完成 → 本任务视为被阻塞） */
+  /** 依赖的任务 id——新 checkbox 模型不使用，阻塞改为任务自身状态 */
   dependencies: string[]
   created: string
   /** 完成时间 ISO */
@@ -110,6 +112,12 @@ export interface SearchMatch {
   line: number
   /** 命中行文本 */
   text: string
+}
+
+/** 跨书籍全文搜索命中（书籍管理页搜索 → 点击跳到对应书章节行） */
+export interface BookSearchAllMatch extends SearchMatch {
+  bookDir: string
+  bookName: string
 }
 
 

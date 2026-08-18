@@ -3,7 +3,7 @@ import type { Project, Task, TaskStatus } from '@booktool/shared'
 import { api } from '../api'
 import { todayStr } from './KanbanView'
 
-export const STATUS_LABEL: Record<TaskStatus, string> = { todo: '待办', doing: '进行中', done: '已完成' }
+export const STATUS_LABEL: Record<TaskStatus, string> = { todo: '待办', doing: '进行中', blocked: '阻塞', done: '已完成' }
 export const STATUS_ORDER: TaskStatus[] = ['todo', 'doing', 'done']
 export const PRIORITY_LABEL: Record<Task['priority'], string> = { low: '低', normal: '普通', high: '高', urgent: '紧急' }
 

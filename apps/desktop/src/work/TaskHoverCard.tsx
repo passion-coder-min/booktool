@@ -16,7 +16,7 @@ export default function TaskHoverCard({ hover, tasks, projects }: Props) {
   const { task, x, y } = hover
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const deps = task.dependencies.map((id) => byId.get(id)).filter((t): t is Task => Boolean(t))
-  const blocked = deps.some((d) => d.status !== 'done')
+  const blocked = task.status === 'blocked'
   const project = projects.find((p) => p.id === task.project)
   const overdue = task.status !== 'done' && task.due !== null && task.due < todayStr()
 
