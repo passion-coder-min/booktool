@@ -19,7 +19,7 @@ interface ChapterBuild {
 /** 编译整本书：md -> typst -> PDF，含 Mermaid 渲染与诊断回映射 */
 export async function compileBook(
   bookDir: string,
-  onStatus?: (msg: string) => void,
+  onStatus?: (msg: string, progress?: { done: number; total: number }) => void,
   opts?: { outputName?: string },
 ): Promise<CompileReport> {
   const t0 = Date.now()
@@ -39,6 +39,7 @@ export async function compileBook(
   const warnings: Diagnostic[] = []
   // 远程图片预取（Typst CLI 不支持网络取图）；缺失章节跳过并警告，不中止整书
   const chapterContents: { path: string; md: string }[] = []
+  let chaptersDone = 0
   for (const ch of book.chapters) {
     const md = readChapterSafe(bookDir, book.config.srcDir, ch.path)
     if (md === null) {
@@ -53,6 +54,8 @@ export async function compileBook(
       continue
     }
     chapterContents.push({ path: ch.path, md })
+    chaptersDone++
+    onStatus?.(`转换章节 ${chaptersDone}/${book.chapters.length}`, { done: chaptersDone, total: book.chapters.length })
   }
   const { map: remoteImages, warnings: remoteWarnings } = await prefetchRemoteImages(
     chapterContents,
@@ -115,6 +118,8 @@ export async function compileBook(
   // 2) Mermaid 渲染（内容哈希缓存，3 并发；单图失败不中止全书，写占位图 + 警告）
   let mermaidRendered = 0
   let mermaidCached = 0
+  let mermaidDone = 0
+  const mermaidTotal = diagrams.size
   const mermaidFailures: { hash: string; err: string }[] = []
   const limiter = pLimit(3)
   const jobs = [...diagrams.entries()].map(([hash, code]) =>
@@ -122,17 +127,18 @@ export async function compileBook(
       const svg = join(assetsDir, `mermaid-${hash}.svg`)
       if (existsSync(svg)) {
         mermaidCached++
-        return
+      } else {
+        try {
+          await renderMermaid(code, svg)
+          mermaidRendered++
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err)
+          mermaidFailures.push({ hash, err: msg })
+          writeMermaidPlaceholder(svg, hash, msg)
+        }
       }
-      onStatus?.(`渲染 Mermaid 图 ${hash.slice(0, 6)} …`)
-      try {
-        await renderMermaid(code, svg)
-        mermaidRendered++
-      } catch (err) {
-        const msg = String((err as Error)?.message ?? err)
-        mermaidFailures.push({ hash, err: msg })
-        writeMermaidPlaceholder(svg, hash, msg)
-      }
+      mermaidDone++
+      onStatus?.(`渲染 Mermaid 图 ${mermaidDone}/${mermaidTotal}`, { done: mermaidDone, total: mermaidTotal })
     }),
   )
   await Promise.all(jobs)
@@ -243,7 +249,7 @@ async function prefetchRemoteImages(
   chapters: { path: string; md: string }[],
   rootDir: string,
   assetsDir: string,
-  onStatus?: (msg: string) => void,
+  onStatus?: (msg: string, progress?: { done: number; total: number }) => void,
 ): Promise<{ map: Map<string, string>; warnings: Diagnostic[] }> {
   const found = new Map<string, { file: string; line: number }>()
   for (const ch of chapters) {
@@ -262,6 +268,8 @@ async function prefetchRemoteImages(
 
   const cached = new Set(readdirSync(assetsDir))
   const limiter = pLimit(3)
+  let done = 0
+  const total = found.size
   await Promise.all(
     [...found.entries()].map(([url, loc]) =>
       limiter(async () => {
@@ -270,31 +278,32 @@ async function prefetchRemoteImages(
         const hit = [...cached].find((n) => n.startsWith(`web-${hash}.`))
         if (hit) {
           map.set(url, '/' + relative(rootDir, join(assetsDir, hit)))
-          return
+        } else {
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(20_000), redirect: 'follow' })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            const buf = Buffer.from(await res.arrayBuffer())
+            const sniffed = sniffImageExt(buf) ?? '.png'
+            const dest = join(assetsDir, `web-${hash}${sniffed}`)
+            if (!existsSync(dest)) writeFileSync(dest, buf)
+            map.set(url, '/' + relative(rootDir, dest))
+          } catch (err) {
+            const msg = String((err as Error)?.message ?? err)
+            const dest = join(assetsDir, `web-missing-${hash}.svg`)
+            writePlaceholderImage(dest, '远程图片下载失败', `${msg}\n${url}`)
+            map.set(url, '/' + relative(rootDir, dest))
+            warnings.push({
+              severity: 'warning',
+              message: `远程图片下载失败（已用占位图替代）：${msg}`,
+              file: loc.file,
+              line: loc.line,
+              typFile: '',
+              typLine: 0,
+            })
+          }
         }
-        onStatus?.(`下载远程图片 ${hash.slice(0, 6)} …`)
-        try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(20_000), redirect: 'follow' })
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const buf = Buffer.from(await res.arrayBuffer())
-          const sniffed = sniffImageExt(buf) ?? '.png'
-          const dest = join(assetsDir, `web-${hash}${sniffed}`)
-          if (!existsSync(dest)) writeFileSync(dest, buf)
-          map.set(url, '/' + relative(rootDir, dest))
-        } catch (err) {
-          const msg = String((err as Error)?.message ?? err)
-          const dest = join(assetsDir, `web-missing-${hash}.svg`)
-          writePlaceholderImage(dest, '远程图片下载失败', `${msg}\n${url}`)
-          map.set(url, '/' + relative(rootDir, dest))
-          warnings.push({
-            severity: 'warning',
-            message: `远程图片下载失败（已用占位图替代）：${msg}`,
-            file: loc.file,
-            line: loc.line,
-            typFile: '',
-            typLine: 0,
-          })
-        }
+        done++
+        onStatus?.(`下载远程图片 (${done}/${total})`, { done, total })
       }),
     ),
   )
@@ -550,7 +559,7 @@ export function readBuildMain(bookDir: string): string {
 export async function compileSingleFile(
   fileAbs: string,
   outPdf: string,
-  onStatus?: (msg: string) => void,
+  onStatus?: (msg: string, progress?: { done: number; total: number }) => void,
 ): Promise<CompileReport> {
   const t0 = Date.now()
   const md = readFileSync(fileAbs, 'utf8')
@@ -612,6 +621,8 @@ export async function compileSingleFile(
   // 2) Mermaid（复用书籍管线；缓存命中则跳过；单图失败不中止导出）
   let mermaidRendered = 0
   let mermaidCached = 0
+  let mermaidDone = 0
+  const mermaidTotal = diagrams.size
   const mermaidFailures: { hash: string; err: string }[] = []
   const limiter = pLimit(3)
   const jobs = [...diagrams.entries()].map(([hash, code]) =>
@@ -619,17 +630,18 @@ export async function compileSingleFile(
       const svg = join(assetsDir, `mermaid-${hash}.svg`)
       if (existsSync(svg)) {
         mermaidCached++
-        return
+      } else {
+        try {
+          await renderMermaid(code, svg)
+          mermaidRendered++
+        } catch (err) {
+          const msg = String((err as Error)?.message ?? err)
+          mermaidFailures.push({ hash, err: msg })
+          writeMermaidPlaceholder(svg, hash, msg)
+        }
       }
-      onStatus?.(`渲染 Mermaid 图 ${hash.slice(0, 6)} …`)
-      try {
-        await renderMermaid(code, svg)
-        mermaidRendered++
-      } catch (err) {
-        const msg = String((err as Error)?.message ?? err)
-        mermaidFailures.push({ hash, err: msg })
-        writeMermaidPlaceholder(svg, hash, msg)
-      }
+      mermaidDone++
+      onStatus?.(`渲染 Mermaid 图 ${mermaidDone}/${mermaidTotal}`, { done: mermaidDone, total: mermaidTotal })
     }),
   )
   await Promise.all(jobs)

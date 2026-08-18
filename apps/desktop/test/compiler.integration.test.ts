@@ -152,3 +152,55 @@ describe('compileSingleFile 集成（单文件导出 PDF）', { timeout: 240_000
     expect(readFileSync(outPdf).length).toBeGreaterThan(1000)
   })
 })
+
+describe('compileBook 进度消息（onStatus 携带 done/total）', { timeout: 240_000 }, () => {
+  it('章节/远程图/Mermaid 逐步推送进度，且 Typst 阶段有消息', async () => {
+    const typst = findTypst()
+    if (!typst) return console.warn('跳过：未找到 typst')
+    if (spawnSync('mmdc', ['--version'], { encoding: 'utf8', timeout: 20000 }).status !== 0) {
+      return console.warn('跳过：未找到 mmdc')
+    }
+
+    const userData = join(tmpdir(), 'booktool-test')
+    const binDir = join(userData, 'binaries')
+    mkdirSync(binDir, { recursive: true })
+    const localTypst = join(binDir, 'typst')
+    if (!existsSync(localTypst) && typst !== 'typst') {
+      const { copyFileSync, chmodSync } = await import('node:fs')
+      copyFileSync(typst, localTypst)
+      chmodSync(localTypst, 0o755)
+    }
+
+    const { compileBook } = await import('../electron/main/compiler')
+    const dir = join(tmpdir(), `booktool-progress-${Date.now()}`) // 全新目录：无 mermaid 缓存
+    const src = join(dir, 'src')
+    mkdirSync(src, { recursive: true })
+    writeFileSync(join(dir, 'book.toml'), `[book]\ntitle = "进度"\nauthors = []\n`)
+    writeFileSync(join(src, 'SUMMARY.md'), `- [一](c1.md)\n- [二](c2.md)\n`)
+    for (const [f, body] of [
+      ['c1.md', '# 一\n\n```mermaid\ngraph LR\n  A --> B\n```\n'],
+      ['c2.md', '# 二\n\n正文。\n'],
+    ] as const) {
+      writeFileSync(join(src, f), body)
+    }
+
+    const statuses: { msg: string; progress?: { done: number; total: number } }[] = []
+    const report = await compileBook(dir, (msg, progress) => statuses.push({ msg, progress }), { outputName: 'progress.pdf' })
+    if (!report.ok) console.error(JSON.stringify(report.diagnostics, null, 2))
+    expect(report.ok).toBe(true)
+
+    const msgs = statuses.map((s) => s.msg)
+    // 章节：done 递增到总数（最后一跳为 N/N）
+    const chMsgs = statuses.filter((s) => s.msg.includes('转换章节'))
+    expect(chMsgs.length).toBeGreaterThan(0)
+    expect(chMsgs[0]!.msg).toMatch(/转换章节 \d+\/\d+/)
+    expect(chMsgs[chMsgs.length - 1]!.progress).toEqual({ done: 2, total: 2 })
+    // Mermaid：进度存在且 done ≤ total
+    const mm = statuses.find((s) => s.msg.includes('渲染 Mermaid 图'))
+    expect(mm?.msg).toMatch(/渲染 Mermaid 图 \d+\/\d+/)
+    expect(mm?.progress!.total).toBe(1)
+    expect(mm?.progress!.done).toBe(1)
+    // Typst 阶段消息（单步，无进度）
+    expect(msgs.some((m) => m.includes('Typst 编译 PDF'))).toBe(true)
+  })
+})

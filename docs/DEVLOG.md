@@ -222,17 +222,35 @@
 - 验证：117/117 测试、typecheck 全绿；CDP 驱动真实应用走查 —— 日历渲染/悬停浮层/双击编辑、
   日报进入自动建当前周文件且内容渲染、Wiki 层级树均通过。
 
+### 第十三阶段：编译进度反馈（阶段 + 进度条 + 计时）（08-18，用户反馈驱动）
+
+用户反馈：点「编译 PDF」时只显示「⟳ 编译中…」，希望看到进度，至少给出计时。
+
+- **编译器发带进度消息**：`onStatus(msg)` 扩展为 `onStatus(msg, progress?: {done,total})`；
+  「转换章节 i/N」随章节循环逐步推送；「渲染 Mermaid 图 i/N」按完成计数（并发 3 下仍准确）；
+  「下载远程图片 (i/N)」按完成计数；Typst 单步仍为纯文本阶段消息。`compileBook`/`compileSingleFile`/
+  `prefetchRemoteImages` 均接入。
+- **IPC 透传**：`compileDiagnostics` 推送 `{ status, progress }`。
+- **渲染端订阅**（此前 `onCompileStatus` 已在 preload/api-types 定义但从未被订阅，进度消息全被丢弃）：
+  BookMode 订阅并维护 `compilePhase`/`compileProgress`/`compileElapsed`（编译中每 500ms 刷新）。
+- **展示**：编译按钮实时显示当前阶段（如「⟳ 转换章节 3/3」「⟳ Typst 编译 PDF …」）；
+  底部状态栏编译中显示「⟳ 阶段 (i/N) · 秒数」+ 细进度条（仅在有 done/total 时出现）；完成态不变。
+- 验证：新增 `onStatus` 进度序列集成测试（章节 1/N→N/N、Mermaid done/total、Typst 阶段）；
+  全仓 118/118 测试、typecheck 全绿；CDP 走查真实编译 —— 按钮阶段、状态栏进度条与计时
+  （0.5s→1.0s→1.5s→2.0s）、完成态「✓ 编译完成 2.4s · output/book.pdf」均通过。
+
 ## 验证状态（当前）
 
 | 项 | 结果 |
 |---|---|
-| Vitest | 117/117（含真实 Typst 端到端 + 桌面管线集成 + mermaid 容错 + 图片解析单测） |
+| Vitest | 118/118（含真实 Typst 端到端 + 桌面管线集成 + mermaid 容错 + 图片解析单测 + 编译进度消息） |
 | 类型检查 | 三包 noEmit 全绿 |
 | 构建 | electron-vite 三端全过 |
 | 运行时 | 启动无错；截图目检：书籍管理页/工作区(IR 渲染)/任务管理页/菜单栏/工具栏单行 |
 | 日历交互 | CDP 走查：悬停任务卡片出详情浮层、双击卡片开编辑弹窗、单击不弹详情（通过） |
 | 工作日报 | 进入「📝 日报」自动建当前周文件（`2026-08-17-W34.md`）、内容渲染、侧栏按周列出（通过） |
 | Wiki 树 | 侧栏按路径层级树渲染、文件夹可折叠、当前高亮（通过） |
+| 编译进度 | CDP 走查：按钮实时阶段（`⟳ 转换章节 3/3`）、状态栏进度条 + 计时（0.5s→2.0s）、完成态正常（通过） |
 | 编译显示 | 底部状态栏：`✓ 编译完成 Xs · 相对路径` + 打开/预览（工具栏右侧无路径胶囊） |
 | 滚动 | 长文 DOM 断言 `scrollable:true`（scrollH 16156 > clientH 833，回归修复后） |
 | callout 三端 | 所见即所得 / HTML 预览 / 编译 PDF 均渲染为提醒框（HTML 预览回归修复） |
