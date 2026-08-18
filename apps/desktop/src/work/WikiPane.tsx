@@ -15,6 +15,9 @@ interface Props {
 export default function WikiPane({ project, file }: Props) {
   const [doc, setDoc] = useState('')
   const [saved, setSaved] = useState(true)
+  /** 内容就绪后才挂载 Vditor：Vditor 只在 docKey 变化时重建、忽略 value 变化，
+   *  若先挂载后异步 setDoc，编辑区会一直是空（见 AGENTS.md「VditorEditor 坑」）。 */
+  const [loaded, setLoaded] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seq = useRef(0)
@@ -22,10 +25,17 @@ export default function WikiPane({ project, file }: Props) {
 
   useEffect(() => {
     const my = ++seq.current
+    setLoaded(false)
+    if (!file) return
     void api.work.wikiRead(project.id, file).then((r: { content: string }) => {
       if (my !== seq.current) return
       setDoc(r.content)
       setSaved(true)
+      setLoaded(true)
+    }).catch((e) => {
+      if (my !== seq.current) return
+      alert('读取 wiki 页面失败：' + String(e))
+      setLoaded(true)
     })
   }, [project.id, file])
 
@@ -58,14 +68,20 @@ export default function WikiPane({ project, file }: Props) {
             </button>
           </div>
           <FormatToolbar />
-          <VditorEditor
-            value={doc}
-            docKey={`${project.id}/${file}`}
-            baseDir={baseDir}
-            onChange={onChange}
-            handleRef={vdHandleRef}
-            key={`ir-${project.id}/${file}`}
-          />
+          {loaded ? (
+            <VditorEditor
+              value={doc}
+              docKey={`${project.id}/${file}`}
+              baseDir={baseDir}
+              onChange={onChange}
+              handleRef={vdHandleRef}
+              key={`ir-${project.id}/${file}`}
+            />
+          ) : (
+            <div className="editor-host vditor-host" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+              加载中…
+            </div>
+          )}
         </div>
         {showPreview && (
           <div className="pane">

@@ -18,6 +18,9 @@ interface Props {
 export default function ReportsPane({ project, file, onFile }: Props) {
   const [doc, setDoc] = useState('')
   const [saved, setSaved] = useState(true)
+  /** 内容就绪后才挂载 Vditor（Vditor 只在 docKey 变化时重建、忽略 value 变化，
+   *  异步 setDoc 需先于挂载，否则编辑区一直为空）。 */
+  const [loaded, setLoaded] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
   /** addToday 追加后自增：Vditor 只按 docKey 重建，故用版本号触发重载 */
   const [version, setVersion] = useState(0)
@@ -27,12 +30,19 @@ export default function ReportsPane({ project, file, onFile }: Props) {
 
   useEffect(() => {
     const my = ++seq.current
+    setLoaded(false)
+    if (!file) return
     void api.work.reportRead(project.id, file).then((r: { content: string }) => {
       if (my !== seq.current) return
       setDoc(r.content)
       setSaved(true)
+      setLoaded(true)
+    }).catch((e) => {
+      if (my !== seq.current) return
+      alert('读取日报失败：' + String(e))
+      setLoaded(true)
     })
-  }, [project.id, file, version])
+  }, [project.id, file])
 
   const onChange = (v: string) => {
     setDoc(v)
@@ -85,14 +95,20 @@ export default function ReportsPane({ project, file, onFile }: Props) {
             </button>
           </div>
           <FormatToolbar />
-          <VditorEditor
-            value={doc}
-            docKey={`${project.id}/report/${file}#${version}`}
-            baseDir={baseDir}
-            onChange={onChange}
-            handleRef={vdHandleRef}
-            key={`ir-report-${project.id}/${file}#${version}`}
-          />
+          {loaded ? (
+            <VditorEditor
+              value={doc}
+              docKey={`${project.id}/report/${file}#${version}`}
+              baseDir={baseDir}
+              onChange={onChange}
+              handleRef={vdHandleRef}
+              key={`ir-report-${project.id}/${file}#${version}`}
+            />
+          ) : (
+            <div className="editor-host vditor-host" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+              加载中…
+            </div>
+          )}
         </div>
         {showPreview && (
           <div className="pane">
