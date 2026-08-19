@@ -7,6 +7,7 @@ import type { FormatCmd } from './edit/formatCommands'
 import ActivityBar, { type Activity } from './components/ActivityBar'
 import StatusBar from './components/StatusBar'
 import HelpModal from './components/HelpModal'
+import PromptHost from './components/PromptHost'
 import BookMode, { type BookCommands } from './book/BookMode'
 import WorkActivity from './work/WorkActivity'
 import CalendarActivity from './work/CalendarActivity'
@@ -213,6 +214,7 @@ function AppInner() {
         />
       </div>
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      <PromptHost />
     </div>
   )
 }

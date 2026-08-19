@@ -13,6 +13,7 @@ import type { EditorHandle } from '../edit/formatCommands'
 import BookManagePage from './BookManagePage'
 import SingleFileMode, { type SingleFile } from './SingleFileMode'
 import ImageDialog from '../components/ImageDialog'
+import { promptAsync } from '../components/PromptHost'
 import DiagnosticsPanel from '../components/DiagnosticsPanel'
 
 type PreviewMode = 'html' | 'pdf'
@@ -440,11 +441,11 @@ export default function BookMode({ workspace, onChanged, onRegisterCommands, onR
     gotoChapterLine(pendingJump.file, pendingJump.line)
   }, [view, book, pendingJump, gotoChapterLine])
 
-  const createNew = useCallback(() => {
+  const createNew = useCallback(async () => {
     const s = stateRef.current
     const dir = s.bookDir
     if (!dir) return
-    const fileName = prompt('新章节文件名（如 chapter-4.md）')
+    const fileName = await promptAsync('新章节文件名（如 chapter-4.md）')
     if (!fileName) return
     const title = fileName.replace(/\.md$/, '')
     void api.book
@@ -861,11 +862,11 @@ function DocTree({
     }
   }
 
-  const rename = (item: SummaryItem) => {
-    const title = prompt('新标题', item.title)
+  const rename = async (item: SummaryItem) => {
+    const title = await promptAsync('新标题', item.title)
     if (!title || title === item.title) return
     const fileName = manage && confirm('同时重命名文件？（取消则仅改标题）')
-      ? prompt('新文件名', item.path!.split('/').pop()!) ?? undefined
+      ? (await promptAsync('新文件名', item.path!.split('/').pop()!)) ?? undefined
       : undefined
     void guard(() => api.book.chapterRename(bookDir, item.path!, title, fileName))
   }

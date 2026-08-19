@@ -7,6 +7,7 @@ import TaskOverview from './TaskOverview'
 import ProjectTasksView from './ProjectTasksView'
 import AllTasksView from './AllTasksView'
 import EmptyCard from '../components/EmptyCard'
+import { promptAsync } from '../components/PromptHost'
 
 interface Props {
   workspace: WorkspaceInfo | null
@@ -114,9 +115,12 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
         actions={
           <button
             className="primary"
-            onClick={() => {
-              const name = prompt('项目名称（目录名，仅字母数字连字符）')
-              if (name) void api.work.createProject(name).then(() => onChanged())
+            onClick={async () => {
+              const name = await promptAsync('项目名称（目录名，仅字母数字连字符）')
+              if (name) {
+                await api.work.createProject(name)
+                onChanged()
+              }
             }}
           >
             + 新建项目
@@ -144,16 +148,16 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
   }
 
   const newProject = async () => {
-    const name = prompt('项目名称（目录名，仅字母数字连字符）')
+    const name = await promptAsync('项目名称（目录名，仅字母数字连字符）')
     if (!name) return
     await api.work.createProject(name)
     onChanged()
   }
 
   const renameProject = async (p: Project) => {
-    const newId = prompt('新目录名（仅字母数字连字符）', p.id)
+    const newId = await promptAsync('新目录名（仅字母数字连字符）', p.id)
     if (!newId || newId === p.id) return
-    const newName = prompt('新显示名称', p.name) ?? newId
+    const newName = (await promptAsync('新显示名称', p.name)) ?? newId
     await api.work.renameProject(p.id, newId, newName)
     setProjectId(null)
     onChanged()
@@ -261,9 +265,12 @@ export default function WorkActivity({ workspace, onChanged }: Props) {
                                   setWikiFile(path)
                                   setView('wiki')
                                 }}
-                                onRename={(path) => {
-                                  const nf = prompt('新文件名（可含 文件夹/ 前缀移动）', path)
-                                  if (nf && nf !== path) void wikiOp(() => api.work.wikiRename(p.id, path, nf)).then(() => setWikiFile(nf.endsWith('.md') ? nf : `${nf}.md`))
+                                onRename={async (path) => {
+                                  const nf = await promptAsync('新文件名（可含 文件夹/ 前缀移动）', path)
+                                  if (nf && nf !== path) {
+                                    await wikiOp(() => api.work.wikiRename(p.id, path, nf))
+                                    setWikiFile(nf.endsWith('.md') ? nf : `${nf}.md`)
+                                  }
                                 }}
                                 onDelete={(path) => {
                                   if (confirm(`删除 wiki 页面「${path}」？`)) void wikiOp(() => api.work.wikiDelete(p.id, path)).then(() => setWikiFile(''))
