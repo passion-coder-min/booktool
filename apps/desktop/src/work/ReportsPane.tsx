@@ -101,7 +101,8 @@ export default function ReportsPane({ project, file, onFile }: Props) {
           }
         }
         const section = `# 工作日报 ${todayStr()}\n\n` + lines.slice(start, end).join('\n').trim() + '\n'
-        const name = '.today-export.md'
+        // 写进隐藏目录（.export/），不会出现在日报侧栏（listMd 排除隐藏文件）
+        const name = '.export/today.md'
         await api.work.reportWrite(project.id, name, section)
         abs = `${project.dir}/reports/${name}`
       }

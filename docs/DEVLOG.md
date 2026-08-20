@@ -253,6 +253,18 @@
 - 验证：131/131 测试、typecheck 全绿；CDP 走查真实应用（复现用户场景）—— 工作区进 Wiki 视图 →
   点「+ 新建项目」→ 弹出输入框 → 输入名称回车 → 侧栏出现新项目，全通过。
 
+### 第十五阶段：自查发现并修复 —— 日报导出临时文件污染侧栏（08-19）
+
+自查走查中发现：日报「⬇ 今日 PDF」导出会在 `reports/` 写 `.today-export.md` 临时文件，
+工作区扫描（`listMd` 收集全部 `.md`）会在下次刷新时把它列进日报侧栏（点击还会当普通日报打开）。
+
+- **修复**：
+  - `workspace.ts` `listMd` 排除隐藏文件/目录（`name.startsWith('.')`）——通用规则，wiki 树同样受益
+    （`.booktool/` 等构建产物也不会再出现）。
+  - `ReportsPane` 导出临时文件改写入隐藏目录 `reports/.export/today.md`。
+- 验证：131/131 测试、typecheck 全绿；IPC 实测 `scanWorkspace` 的 `reportFiles/wikiFiles`
+  均不含隐藏文件，周日报/ wiki 正常列出。
+
 ## 验证状态（当前）
 
 | 项 | 结果 |

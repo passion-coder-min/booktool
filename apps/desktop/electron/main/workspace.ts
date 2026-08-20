@@ -136,6 +136,8 @@ function listMd(dir: string): string[] {
   const out: string[] = []
   const walk = (d: string, prefix: string) => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
+      // 隐藏文件/目录（如日报导出临时文件 .today-export.md、.booktool/ 构建产物）不出现在树中
+      if (e.name.startsWith('.')) continue
       if (e.isDirectory()) walk(join(d, e.name), `${prefix}${e.name}/`)
       else if (e.name.endsWith('.md')) out.push(prefix + e.name)
     }
