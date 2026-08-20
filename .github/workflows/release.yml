@@ -6,7 +6,8 @@ name: Release · 跨平台编译
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*'        # 常规：v0.1.0
+      - '[0-9]*'    # 兼容不带 v 前缀的版本号 tag，如 0.1.0-apaha
 
 permissions:
   contents: write # 允许 GITHUB_TOKEN 创建 Release 并上传产物
