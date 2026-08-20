@@ -1,6 +1,12 @@
-# 打 tag（v*）时在三个平台编译打包，并自动把产物发布到对应 tag 的 GitHub Release。
+# 打 tag（v* 或数字开头的版本号，如 0.1.0-apaha）时在多个平台编译打包，
+# 再把各平台安装包统一挂到该 tag 对应的 GitHub Release。
+#
+# 两段式设计（比 electron-builder 自带 publish 更稳）：
+#   1) build —— 各平台并行 electron-vite build + electron-builder（只打包不发布），上传产物
+#   2) release —— 收集全部产物，用 softprops/action-gh-release 创建/更新 Release 并挂载安装包
+#
 # 产物：Linux(deb/AppImage) + Windows(nsis) + macOS(x64/arm64 的 dmg/zip)。
-# 打包由 electron-builder 完成，postinstall 会自动同步各平台对应的 Typst 二进制。
+# postinstall 会自动同步各平台对应的 Typst 二进制。
 name: Release · 跨平台编译
 
 on:
@@ -26,11 +32,12 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
-          # mac 双架构都在 Intel 机器上交叉编译，保证产物确定（arch 由 --x64/--arm64 显式指定）
-          - os: macos-13
+          # 注意：2026 年 macos-latest/macos-15 默认已是 arm64；
+          # Intel x64 需用 macos-15-intel（macos-13 已被下线）
+          - os: macos-15-intel
             platform: mac
             arch: x64
-          - os: macos-13
+          - os: macos-latest
             platform: mac
             arch: arm64
     steps:
@@ -54,9 +61,42 @@ jobs:
       - name: 测试
         run: pnpm test
 
-      - name: 编译并打包（tag 触发自动发布到 GitHub Release）
-        # pnpm dist = electron-vite build && electron-builder；
-        # 追加 --publish always 与架构参数（--x64/--arm64）
-        run: pnpm --filter @booktool/desktop dist -- --publish always --${{ matrix.arch }}
+      - name: 编译并打包（只打包，不发布）
+        run: pnpm --filter @booktool/desktop dist -- --publish never --${{ matrix.arch }}
+
+      - name: 上传安装包产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: booktool-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.yml
+          if-no-files-found: error
+
+  release:
+    name: 发布到 GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          pattern: booktool-*
+          merge-multiple: true
+
+      - name: 列出待发布产物
+        run: ls -lh dist-artifacts/
+
+      - name: 创建/更新 Release 并挂载安装包
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
