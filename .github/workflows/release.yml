@@ -1,0 +1,61 @@
+# 打 tag（v*）时在三个平台编译打包，并自动把产物发布到对应 tag 的 GitHub Release。
+# 产物：Linux(deb/AppImage) + Windows(nsis) + macOS(x64/arm64 的 dmg/zip)。
+# 打包由 electron-builder 完成，postinstall 会自动同步各平台对应的 Typst 二进制。
+name: Release · 跨平台编译
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # 允许 GITHUB_TOKEN 创建 Release 并上传产物
+
+jobs:
+  build:
+    name: 打包 ${{ matrix.platform }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: windows-latest
+            platform: windows
+            arch: x64
+          # mac 双架构都在 Intel 机器上交叉编译，保证产物确定（arch 由 --x64/--arm64 显式指定）
+          - os: macos-13
+            platform: mac
+            arch: x64
+          - os: macos-13
+            platform: mac
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: 安装依赖（postinstall 同步 vditor/字体/Typst 二进制）
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 测试
+        run: pnpm test
+
+      - name: 编译并打包（tag 触发自动发布到 GitHub Release）
+        # pnpm dist = electron-vite build && electron-builder；
+        # 追加 --publish always 与架构参数（--x64/--arm64）
+        run: pnpm --filter @booktool/desktop dist -- --publish always --${{ matrix.arch }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
